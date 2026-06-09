@@ -628,6 +628,16 @@
   verified: true
   releases:
     url: https://github.com/nextcloud/android/releases
+- name: NZBConnect
+  authors: Nathan Grennan
+  category: tools
+  description: A Usenet download manager written in Kotlin for Android. It connects to your SABnzbd and NZBGet servers and searches Newznab indexers. It has no ads, and a clean UI.
+  icon: https://raw.githubusercontent.com/cygnusx-1-org/continuum/refs/heads/master/assets/logo/app_logo.png
+  id: org.cygnusx1.nzbconnect
+  type: curated
+  verified: true
+  releases:
+    url: https://github.com/cygnusx-1-org/NZBConnect/releases
 - name: Odyssey
   authors: Frederik Lütkes
   category: entertainment
