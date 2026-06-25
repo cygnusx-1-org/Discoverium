@@ -1,0 +1,34 @@
+# To get started with Dependabot version updates, you'll need to specify which
+# package ecosystems to update and where the package manifests are located.
+# Please see the documentation for all configuration options:
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+# FR// Configuration Dependabot – mises à jour quotidiennes, sans limite de PRs
+# ENG// Dependabot configuration – daily updates, no PR limit
+
+version: 2
+updates:
+  # FR// Écosystème npm (ou yarn, vérifie si tu as un yarn.lock)
+  # ENG// npm ecosystem (or yarn, check if you have a yarn.lock)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    # FR// Pas de limite de PRs ouvertes (0 = illimité)
+    # ENG// No limit on open PRs (0 = unlimited)
+    open-pull-requests-limit: 0
+    labels:
+      - "dependencies"
+      - "javascript"
+    rebase-strategy: "auto"
+
+  # FR// GitHub Actions
+  # ENG// GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 0
+    labels:
+      - "dependencies"
+      - "github-actions"
