@@ -107,6 +107,19 @@ android {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
         }
+        // AGP 9 turns R8 minification on for release by default (AGP 8 did not),
+        // which upstream Obtainium neither enables nor tests against. Several
+        // dependencies here resolve classes reflectively, so opt out explicitly
+        // rather than relying on the AGP default. proguard-rules.pro carries the
+        // keep rules needed if this is ever switched back on.
+        all {
+            isMinifyEnabled = false
+            isShrinkResources = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+        }
     }
 }
 

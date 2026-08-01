@@ -1,32 +1,14 @@
-##---------------Begin: proguard configuration for Gson  ----------
-# Gson uses generic type information stored in a class file when working with fields. Proguard
-# removes such information by default, so configure it to keep all of it.
--keepattributes Signature
+# AGP 9 enables R8 minification for release builds by default (AGP 8 did not),
+# so these rules only became necessary with the Gradle 9.6.1 / AGP 9.3.0
+# toolchain. Upstream Obtainium builds unminified and does not need them.
 
-# For using GSON @Expose annotation
--keepattributes *Annotation*
+# room-runtime 2.6.1 ships only "-keep class * extends androidx.room.RoomDatabase",
+# which keeps the class but not its members. Under R8 full mode (the default
+# since AGP 8) that lets the generated *_Impl no-arg constructor be stripped,
+# so Room's reflective instantiation fails at startup with:
+#   NoSuchMethodException: androidx.work.impl.WorkDatabase_Impl.<init> []
+# Room 2.7+ ships this rule itself; keep it here until that version is pulled in.
+-keep class * extends androidx.room.RoomDatabase { <init>(); }
 
-# Gson specific classes
--dontwarn sun.misc.**
-#-keep class com.google.gson.stream.** { *; }
-
-# Application classes that will be serialized/deserialized over Gson
--keep class com.google.gson.examples.android.model.** { <fields>; }
-
-# Prevent proguard from stripping interface information from TypeAdapter, TypeAdapterFactory,
-# JsonSerializer, JsonDeserializer instances (so they can be used in @JsonAdapter)
--keep class * extends com.google.gson.TypeAdapter
--keep class * implements com.google.gson.TypeAdapterFactory
--keep class * implements com.google.gson.JsonSerializer
--keep class * implements com.google.gson.JsonDeserializer
-
-# Prevent R8 from leaving Data object members always null
--keepclassmembers,allowobfuscation class * {
-  @com.google.gson.annotations.SerializedName <fields>;
-}
-
-# Retain generic signatures of TypeToken and its subclasses with R8 version 3.0 and higher.
--keep,allowobfuscation,allowshrinking class com.google.gson.reflect.TypeToken
--keep,allowobfuscation,allowshrinking class * extends com.google.gson.reflect.TypeToken
-
-##---------------End: proguard configuration for Gson  ----------
+# WorkManager instantiates Workers reflectively by class name.
+-keep class * extends androidx.work.ListenableWorker { <init>(...); }

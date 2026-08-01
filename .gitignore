@@ -57,3 +57,8 @@ app.*.map.json
 TODO.txt
 data
 node_modules/
+
+# FVM Version Cache
+.fvm/
+
+backup/

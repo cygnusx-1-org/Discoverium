@@ -1,106 +1,23 @@
-import 'dart:convert';
-import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:yaml/yaml.dart';
+import 'dart:async';
+
 import 'package:easy_localization/easy_localization.dart';
-import 'package:obtainium/providers/apps_provider.dart';
-import 'package:obtainium/providers/source_provider.dart';
-import 'package:obtainium/providers/settings_provider.dart';
-import 'package:obtainium/providers/notifications_provider.dart';
-import 'package:obtainium/main.dart';
+import 'package:flutter/material.dart';
+import 'package:obtainium/components/generated_form_model.dart';
+import 'package:obtainium/components/ui_widgets.dart';
 import 'package:obtainium/custom_errors.dart';
-import 'package:obtainium/pages/app.dart';
+import 'package:obtainium/main.dart';
+import 'package:obtainium/pages/add_app.dart';
 import 'package:obtainium/pages/advanced_search.dart';
-import 'package:obtainium/components/generated_form.dart';
+import 'package:obtainium/providers/apps_provider.dart';
+import 'package:obtainium/providers/discoverium_repo.dart';
+import 'package:obtainium/providers/logs_provider.dart';
+import 'package:obtainium/providers/notifications_provider.dart';
+import 'package:obtainium/providers/settings_provider.dart';
+import 'package:obtainium/providers/source_provider.dart';
 import 'package:provider/provider.dart';
 
-class DiscoveriumApp {
-  final String name;
-  final String description;
-  final String? author;
-  final String? url;
-  final String? icon;
-  final String? releasesUrl;
-  final List<String> categories;
-  final bool verified;
-  final bool commercial;
-  final String? releaseTitleFilterRegex;
-
-  DiscoveriumApp({
-    required this.name,
-    required this.description,
-    this.author,
-    this.url,
-    this.icon,
-    this.releasesUrl,
-    this.categories = const [],
-    this.verified = true,
-    this.commercial = false,
-    this.releaseTitleFilterRegex,
-  });
-
-  factory DiscoveriumApp.fromYaml(Map<String, dynamic> yaml) {
-    // Extract releases URL from nested structure
-    String? releasesUrl;
-    if (yaml['releases'] is Map && yaml['releases']['url'] != null) {
-      releasesUrl = yaml['releases']['url'].toString();
-    }
-
-    // Handle both 'author' and 'authors' fields
-    String? author;
-    if (yaml['author'] != null) {
-      author = yaml['author'].toString();
-    } else if (yaml['authors'] != null) {
-      author = yaml['authors'].toString();
-    }
-
-    // Handle both 'categories' (list) and 'category' (single) fields
-    List<String> categories = [];
-    if (yaml['categories'] is List) {
-      categories = (yaml['categories'] as List).map((e) => e.toString()).toList();
-    } else if (yaml['category'] != null) {
-      categories = [yaml['category'].toString()];
-    }
-
-    // Parse verified field, default to true if not specified
-    bool verified = yaml['verified'] == true;
-
-    // Parse commercial field, default to false if not specified
-    bool commercial = yaml['commercial'] == true; // Note: keeping the typo from YAML
-
-    // Parse filters.release.title for release title regex filter
-    String? releaseTitleFilterRegex;
-    if (yaml['filters'] is Map) {
-      final filters = yaml['filters'] as Map;
-      final release = filters['release'];
-      if (release is Map && release['title'] != null) {
-        releaseTitleFilterRegex = release['title'].toString();
-      }
-    }
-
-    return DiscoveriumApp(
-      name: yaml['name']?.toString() ?? 'Unknown',
-      description: yaml['description']?.toString() ?? 'No description',
-      author: author,
-      url: yaml['url']?.toString(),
-      icon: yaml['icon']?.toString(),
-      releasesUrl: releasesUrl,
-      categories: categories,
-      verified: verified,
-      commercial: commercial,
-      releaseTitleFilterRegex: releaseTitleFilterRegex,
-    );
-  }
-
-  bool matchesSearch(String query) {
-    final lowercaseQuery = query.toLowerCase();
-    return name.toLowerCase().contains(lowercaseQuery) ||
-          description.toLowerCase().contains(lowercaseQuery) ||
-          (author?.toLowerCase().contains(lowercaseQuery) ?? false) ||
-          categories.any((category) => category.toLowerCase().contains(lowercaseQuery));
-  }
-}
-
+/// Browses Discoverium's curated app repository so users can discover apps
+/// rather than having to already know a release URL.
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
 
@@ -109,100 +26,94 @@ class SearchPage extends StatefulWidget {
 }
 
 class SearchPageState extends State<SearchPage> {
-  // Static variables to preserve state across widget rebuilds
-  static String _persistentSearchQuery = '';
-  static List<DiscoveriumApp> _persistentAllApps = [];
-  static List<DiscoveriumApp> _persistentFilteredApps = [];
-  static bool _hasLoadedApps = false;
+  // Search is a pushed route, so its state would otherwise be discarded every
+  // time the user opens an app and comes back. These preserve the query, the
+  // loaded repo and the exact scroll position across visits.
+  static String _lastQuery = '';
+  static List<DiscoveriumApp> _lastApps = [];
+  static double _lastScrollOffset = 0;
+  static bool _loadedOnce = false;
+  static String? _lastBranch;
 
-  final TextEditingController _searchController = TextEditingController();
-  final ScrollController _scrollController = ScrollController();
+  late final TextEditingController _searchController;
+  late final ScrollController _scrollController;
+
+  /// Releases URLs of adds currently in flight, shown on their own rows.
+  final Set<String> _addingUrls = <String>{};
+
   List<DiscoveriumApp> _allApps = [];
   List<DiscoveriumApp> _filteredApps = [];
   bool _isLoading = false;
   String? _error;
-  final Set<String> _failedImageUrls = <String>{};
+  final Set<String> _failedIconUrls = <String>{};
 
   @override
   void initState() {
     super.initState();
-
-    // Restore persistent state
-    _searchController.text = _persistentSearchQuery;
-    _allApps = List.from(_persistentAllApps);
-    _filteredApps = List.from(_persistentFilteredApps);
-
-    _searchController.addListener(_filterApps);
-
-    // Auto-load apps only if not already loaded
-    if (!_hasLoadedApps) {
-      _loadApps();
+    final branch = context.read<SettingsProvider>().discoveriumBranch;
+    if (_lastBranch != branch) {
+      // A different branch is a different catalogue, so the retained query,
+      // results and scroll position no longer describe anything.
+      _lastBranch = branch;
+      _lastQuery = '';
+      _lastApps = [];
+      _lastScrollOffset = 0;
+      _loadedOnce = false;
+    }
+    _searchController = TextEditingController(text: _lastQuery);
+    _scrollController = ScrollController(
+      initialScrollOffset: _lastScrollOffset,
+    );
+    _allApps = List.of(_lastApps);
+    _searchController.addListener(_onQueryChanged);
+    if (!_loadedOnce) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadApps());
     }
   }
 
   @override
   void dispose() {
-    // Save persistent state
-    _persistentSearchQuery = _searchController.text;
-    _persistentAllApps = List.from(_allApps);
-    _persistentFilteredApps = List.from(_filteredApps);
-
+    _lastQuery = _searchController.text;
+    _lastApps = List.of(_allApps);
+    if (_scrollController.hasClients) {
+      _lastScrollOffset = _scrollController.offset;
+    }
     _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadApps() async {
+  void _onQueryChanged() => setState(_recomputeFiltered);
 
+  Future<void> _loadApps({bool forceRefresh = false}) async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _error = null;
     });
-
     try {
-      // Get the branch setting from SettingsProvider
-      final settingsProvider = context.read<SettingsProvider>();
-      final branch = settingsProvider.discoveriumBranch;
-
-      // Fetch apps.yml with the new simplified format
-      final appsResponse = await http.get(
-        Uri.parse('https://raw.githubusercontent.com/cygnusx-1-org/Discoverium/refs/heads/$branch/repo/apps.yml'),
+      final branch = context.read<SettingsProvider>().discoveriumBranch;
+      final apps = await DiscoveriumRepo.apps(
+        branch: branch,
+        forceRefresh: forceRefresh,
       );
-
-      if (appsResponse.statusCode != 200) {
-        throw Exception('Failed to load apps.yml: ${appsResponse.statusCode}');
-      }
-
-      // Parse apps.yml directly as a list of apps
-      final appsYaml = loadYaml(appsResponse.body);
-
-      final List<DiscoveriumApp> apps = [];
-
-      // The YAML is now directly a list of app objects
-      if (appsYaml is List) {
-        for (final appData in appsYaml) {
-          if (appData is Map) {
-            try {
-              apps.add(DiscoveriumApp.fromYaml(Map<String, dynamic>.from(appData)));
-            } catch (e) {
-              print('Error parsing app data: $e');
-              // Continue with other apps even if one fails
-            }
-          }
-        }
-      }
-
+      if (!mounted) return;
+      // Only after the results are actually kept, or leaving mid-load would
+      // suppress every later attempt.
+      _loadedOnce = true;
       setState(() {
         _allApps = apps;
         _isLoading = false;
+        _recomputeFiltered();
       });
-
-      // Mark apps as loaded
-      _hasLoadedApps = true;
-
-      // Apply filtering after loading
-      _filterApps();
     } catch (e) {
+      unawaited(
+        LogsProvider().add(
+          'Failed to load the Discoverium app repo: $e',
+          level: LogLevel.error,
+        ),
+      );
+      if (!mounted) return;
       setState(() {
         _error = e.toString();
         _isLoading = false;
@@ -210,473 +121,417 @@ class SearchPageState extends State<SearchPage> {
     }
   }
 
-  void _filterApps() {
-    final query = _searchController.text;
-    final settingsProvider = context.read<SettingsProvider>();
-    final allowUnverified = settingsProvider.allowUnverifiedApps;
-    final allowCommercial = settingsProvider.allowCommercialApps;
+  /// Applies the query plus the verified/commercial filters, and hides apps the
+  /// user has already added.
+  void _recomputeFiltered() {
+    final settings = context.read<SettingsProvider>();
+    final allowUnverified = settings.allowUnverifiedApps;
+    final allowCommercial = settings.allowCommercialApps;
+    final query = _searchController.text.trim();
 
-    // Get existing apps to filter out already added apps
-    final appsProvider = context.read<AppsProvider>();
-    final existingApps = appsProvider.apps.values.map((appInfo) => appInfo.app).toList();
+    final existing = context.read<AppsProvider>().apps.values.map((a) => a.app);
+    final existingUrls = <String>{};
+    final existingNameAuthors = <String>{};
+    for (final app in existing) {
+      existingUrls.add(DiscoveriumRepo.normalizeUrl(app.url));
+      existingNameAuthors.add(
+        '${app.name.toLowerCase()}|${app.author.toLowerCase()}',
+      );
+    }
 
-    // Create sets for efficient lookup
-    final existingAppUrls = existingApps.map((app) => app.url.trim().toLowerCase()).toSet();
-    final existingAppNames = existingApps.map((app) => '${app.name.toLowerCase()}|${app.author.toLowerCase()}').toSet();
-
-    bool isAppAlreadyAdded(DiscoveriumApp app) {
-      // Check if the release URL matches any existing app URL
-      if (app.releasesUrl != null) {
-        final normalizedReleaseUrl = app.releasesUrl!.trim().toLowerCase();
-        if (existingAppUrls.contains(normalizedReleaseUrl)) {
-          return true;
-        }
-      }
-
-      // Also check by name + author combination as a fallback
-      final appNameAuthor = '${app.name.toLowerCase()}|${(app.author ?? '').toLowerCase()}';
-      if (existingAppNames.contains(appNameAuthor)) {
+    bool alreadyAdded(DiscoveriumApp app) {
+      final releasesUrl = app.releasesUrl;
+      if (releasesUrl != null &&
+          existingUrls.contains(DiscoveriumRepo.normalizeUrl(releasesUrl))) {
         return true;
       }
-
-      return false;
+      final nameAuthor =
+          '${app.name.toLowerCase()}|${(app.author ?? '').toLowerCase()}';
+      return existingNameAuthors.contains(nameAuthor);
     }
 
-    setState(() {
-      if (query.isEmpty) {
-        _filteredApps = _allApps
-            .where((app) =>
-                (allowUnverified || app.verified) &&
-                (allowCommercial || !app.commercial) &&
-                !isAppAlreadyAdded(app))
-            .toList();
-      } else {
-        _filteredApps = _allApps
-            .where((app) =>
-                app.matchesSearch(query) &&
-                (allowUnverified || app.verified) &&
-                (allowCommercial || !app.commercial) &&
-                !isAppAlreadyAdded(app))
-            .toList();
-      }
-    });
+    _filteredApps = _allApps
+        .where(
+          (app) =>
+              (allowUnverified || app.verified) &&
+              (allowCommercial || !app.commercial) &&
+              (_addingUrls.contains(app.releasesUrl) || !alreadyAdded(app)) &&
+              (query.isEmpty || app.matchesSearch(query)),
+        )
+        .toList();
   }
 
-  Future<void> _showAddAppDialog(DiscoveriumApp app) async {
+  Future<void> _confirmAndAdd(DiscoveriumApp app) async {
     if (app.releasesUrl == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(tr('noReleasesUrl')),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      showError(ObtainiumError(tr('noReleasesUrl')), context);
       return;
     }
-
-    final result = await showDialog<bool>(
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text(app.name),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(app.description),
-              const SizedBox(height: 16),
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(app.name),
+        scrollable: true,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: 12,
+          children: [
+            if (app.description.isNotEmpty) Text(app.description),
+            if (app.author != null)
               Text(
-                tr('addAppConfirmation'),
-                style: Theme.of(context).textTheme.bodyMedium,
+                tr('byX', args: [app.author!]),
+                style: Theme.of(ctx).textTheme.bodySmall,
               ),
-              if (app.author != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'By ${app.author}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: Text(tr('cancel')),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: Text(tr('add')),
-            ),
+            Text(tr('addAppConfirmation')),
           ],
-        );
-      },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(tr('cancel')),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(tr('add')),
+          ),
+        ],
+      ),
     );
-
-    if (result == true) {
-      await _addAppToMainList(app);
+    if (confirmed == true && mounted) {
+      await _addApp(app);
     }
   }
 
-  Future<void> _addAppToMainList(DiscoveriumApp discoveriumApp) async {
-    try {
-      final releasesUrl = discoveriumApp.releasesUrl!;
-      // Get providers
-      final appsProvider = context.read<AppsProvider>();
-      final settingsProvider = context.read<SettingsProvider>();
-      final notificationsProvider = context.read<NotificationsProvider>();
-      final sourceProvider = SourceProvider();
+  Future<void> _addApp(DiscoveriumApp discoveriumApp) async {
+    final appsProvider = context.read<AppsProvider>();
+    final notificationsProvider = context.read<NotificationsProvider>();
+    final sourceProvider = SourceProvider();
+    final releasesUrl = discoveriumApp.releasesUrl!;
+    final requestUrl = releasesUrl.trim();
 
-      // Show loading snackbar instead of changing main loading state
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-              const SizedBox(width: 16),
-              Text(tr('addApp')),
-            ],
-          ),
-          duration: const Duration(seconds: 30), // Long duration, will be dismissed manually
-        ),
+    setState(() => _addingUrls.add(releasesUrl));
+
+    try {
+      final source = sourceProvider.getSource(requestUrl);
+      final additionalSettings = getDefaultValuesFromFormItems(
+        source.combinedAppSpecificSettingFormItems,
       );
 
-      // Get app info from the releases URL
-      final source = sourceProvider.getSource(releasesUrl);
-      final defaultSettings = source != null
-          ? getDefaultValuesFromFormItems(source.combinedAppSpecificSettingFormItems)
-          : <String, dynamic>{};
-
-      // Apply release title filter if provided in repo metadata
-      if (discoveriumApp.releaseTitleFilterRegex != null &&
-          discoveriumApp.releaseTitleFilterRegex!.isNotEmpty) {
-        defaultSettings['filterReleaseTitlesByRegEx'] =
-            discoveriumApp.releaseTitleFilterRegex;
+      // Some curated entries publish several artifacts per release and need a
+      // title filter to pick the right one.
+      final titleFilter = discoveriumApp.releaseTitleFilterRegex;
+      if (titleFilter != null && titleFilter.isNotEmpty) {
+        additionalSettings['filterReleaseTitlesByRegEx'] = titleFilter;
       }
 
-      final app = await sourceProvider.getApp(
+      var app = await sourceProvider.getApp(
         source,
-        releasesUrl.trim(),
-        defaultSettings,
+        requestUrl,
+        additionalSettings,
         trackOnlyOverride: false,
         sourceIsOverriden: false,
         inferAppIdIfOptional: true,
       );
 
-      // Check if app already exists
-      if (appsProvider.apps.containsKey(app.id)) {
-        throw ObtainiumError(tr('appAlreadyAdded'));
-      }
-
-      // Download APK if needed for package ID (only if not track-only)
-      if (isTempId(app) && app.additionalSettings['trackOnly'] != true) {
-        final apkUrl = await appsProvider.confirmAppFileUrl(app, context, false);
+      // The curated repo usually records the package ID, so this download is
+      // only needed for entries that don't.
+      if (isTempId(app) && !app.settings.getBool('trackOnly')) {
+        if (!mounted) throw ObtainiumError(tr('cancelled'));
+        final apkUrl = await appsProvider.confirmAppFileUrl(
+          app,
+          context,
+          false,
+        );
         if (apkUrl == null) {
           throw ObtainiumError(tr('cancelled'));
         }
-        app.preferredApkIndex = app.apkUrls.map((e) => e.value).toList().indexOf(apkUrl.value);
-
+        app = app.copyWith(
+          preferredApkIndex: app.apkUrls
+              .map((e) => e.value)
+              .toList()
+              .indexOf(apkUrl.value),
+        );
+        if (!mounted) throw ObtainiumError(tr('cancelled'));
         final downloadedArtifact = await appsProvider.downloadApp(
           app,
-          globalNavigatorKey.currentContext,
+          appNavigatorKey.currentContext,
           notificationsProvider: notificationsProvider,
         );
-
         DownloadedApk? downloadedFile;
         DownloadedDir? downloadedDir;
         if (downloadedArtifact is DownloadedApk) {
           downloadedFile = downloadedArtifact;
-        } else {
-          downloadedDir = downloadedArtifact as DownloadedDir;
+        } else if (downloadedArtifact is DownloadedDir) {
+          downloadedDir = downloadedArtifact;
         }
-        app.id = downloadedFile?.appId ?? downloadedDir!.appId;
+        if (downloadedFile == null && downloadedDir == null) {
+          throw ObtainiumError(tr('downloadFailed'));
+        }
+        app = app.copyWith(id: downloadedFile?.appId ?? downloadedDir!.appId);
       }
 
-      // Set installed version for track-only or non-version-detection apps
-      if (app.additionalSettings['trackOnly'] == true ||
-          app.additionalSettings['versionDetection'] != true) {
-        app.installedVersion = app.latestVersion;
+      // Checked after the download because the ID can change above.
+      if (appsProvider.apps.containsKey(app.id)) {
+        throw ObtainiumError(tr('appAlreadyAdded'));
       }
 
-      // Save the app
+      if (app.settings.getBool('trackOnly') ||
+          !app.settings.getBool('versionDetection')) {
+        app = app.copyWith(installedVersion: app.latestVersion);
+      }
+
       await appsProvider.saveApps([app], onlyIfExists: false);
-
-      // Dismiss the loading snackbar
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-
-      // Show success message and navigate to app page
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(tr('appAdded')),
-          action: SnackBarAction(
-            label: tr('view'),
-            onPressed: () {
-              Navigator.push(
-                globalNavigatorKey.currentContext ?? context,
-                MaterialPageRoute(builder: (context) => AppPage(appId: app.id)),
-              );
-            },
-          ),
-        ),
-      );
     } catch (e) {
-      // Hide loading snackbar and show error
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      showError(e, context);
+      if (mounted) showError(e, context);
+    } finally {
+      // The row leaves the list on success (already-added apps are filtered
+      // out), so there is nothing more to report.
+      if (mounted) {
+        setState(() {
+          _addingUrls.remove(releasesUrl);
+          _recomputeFiltered();
+        });
+      } else {
+        _addingUrls.remove(releasesUrl);
+      }
     }
   }
 
-    @override
-  Widget build(BuildContext context) {
-    // Watch the settings provider to rebuild when allowUnverifiedApps changes
-    final settingsProvider = context.watch<SettingsProvider>();
-    // Watch the apps provider to rebuild when apps are added/removed
-    final appsProvider = context.watch<AppsProvider>();
+  Widget _repoIcon(DiscoveriumApp app, double size) {
+    final url = app.icon;
+    final cacheDim = (size * MediaQuery.devicePixelRatioOf(context)).round();
+    final placeholder = Container(
+      width: size,
+      height: size,
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Icon(Icons.apps, size: size * 0.55),
+    );
+    return ClipRSuperellipse(
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: url == null || _failedIconUrls.contains(url)
+            ? placeholder
+            : Image.network(
+                url,
+                fit: BoxFit.cover,
+                cacheWidth: cacheDim,
+                cacheHeight: cacheDim,
+                errorBuilder: (context, error, stack) {
+                  // Remember the failure so the list stops retrying on scroll.
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted && _failedIconUrls.add(url)) setState(() {});
+                  });
+                  return placeholder;
+                },
+              ),
+      ),
+    );
+  }
 
-    // Re-filter apps when the settings or apps change
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_allApps.isNotEmpty) {
-        _filterApps();
-      }
-    });
+  Widget _statusChip(String label, {bool warn = false}) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Chip(
+      label: Text(label, style: const TextStyle(fontSize: 10)),
+      labelStyle: warn ? TextStyle(color: colorScheme.onErrorContainer) : null,
+      backgroundColor: warn ? colorScheme.errorContainer : null,
+      side: warn ? BorderSide.none : null,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+    );
+  }
+
+  Widget _appTile(DiscoveriumApp app) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final showChips =
+        app.categories.isNotEmpty || app.commercial || !app.verified;
+    final adding = _addingUrls.contains(app.releasesUrl);
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: ListTile(
+        leading: adding
+            ? const SizedBox(
+                width: 40,
+                height: 40,
+                child: Center(
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              )
+            : _repoIcon(app, 40),
+        title: Text(
+          app.name,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: 4,
+          children: [
+            if (app.description.isNotEmpty) Text(app.description),
+            if (app.author != null)
+              Text(
+                tr('byX', args: [app.author!]),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            if (showChips)
+              Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: [
+                  ...app.categories.map(_statusChip),
+                  if (app.commercial) _statusChip(tr('commercial'), warn: true),
+                  if (!app.verified) _statusChip(tr('unverified'), warn: true),
+                ],
+              ),
+          ],
+        ),
+        isThreeLine: true,
+        onTap: app.releasesUrl == null || adding
+            ? null
+            : () => _confirmAndAdd(app),
+      ),
+    );
+  }
+
+  /// Wraps a non-scrolling state so pull-to-refresh still reaches it.
+  Widget _refreshable(Widget child) {
+    return RefreshIndicator(
+      onRefresh: () => _loadApps(forceRefresh: true),
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _body() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            spacing: 16,
+            children: [
+              Icon(
+                Icons.error_outline,
+                size: 56,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              Text(
+                tr('errorOccurred'),
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              FilledButton.tonalIcon(
+                onPressed: () => _loadApps(forceRefresh: true),
+                icon: const Icon(Icons.refresh),
+                label: Text(tr('retry')),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_allApps.isEmpty) {
+      // Refreshable: this state is otherwise a dead end, since there is no
+      // retry button here and _loadedOnce suppresses the reload on re-entry.
+      return _refreshable(
+        EmptyState(icon: Icons.apps, message: tr('noAppsLoaded')),
+      );
+    }
+    if (_filteredApps.isEmpty) {
+      return EmptyState(
+        icon: Icons.search_off,
+        message: tr('tryDifferentSearch'),
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: () => _loadApps(forceRefresh: true),
+      child: ListView.builder(
+        controller: _scrollController,
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).padding.bottom + 96,
+        ),
+        itemCount: _filteredApps.length,
+        itemBuilder: (context, index) => _appTile(_filteredApps[index]),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Rebuild when the verified/commercial filters or the app list change, so
+    // newly added apps disappear from the results.
+    context.watch<SettingsProvider>();
+    context.watch<AppsProvider>();
+    _recomputeFiltered();
 
     return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         title: Text(tr('searchApps')),
-        elevation: 0,
         actions: [
           TextButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const AdvancedSearchPage()),
-              );
-            },
-            child: const Text('Advanced Search'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdvancedSearchPage()),
+            ),
+            child: Text(tr('advancedSearch')),
           ),
         ],
       ),
       body: Column(
         children: [
-          // Search bar
           Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              children: [
-                TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: tr('searchHint'),
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _searchController.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear),
-                            onPressed: () {
-                              _searchController.clear();
-                            },
-                          )
-                        : null,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
+            padding: const EdgeInsets.all(16),
+            child: TextField(
+              controller: _searchController,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: tr('searchHint'),
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.clear),
+                        tooltip: tr('clear'),
+                        onPressed: _searchController.clear,
+                      ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const SizedBox(height: 16),
-                if (_allApps.isEmpty && !_isLoading && _error != null)
-                  ElevatedButton.icon(
-                    onPressed: _loadApps,
-                    icon: const Icon(Icons.refresh),
-                    label: Text(tr('retry')),
-                  ),
-              ],
+              ),
             ),
           ),
-
-          // Content area
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.error_outline,
-                              size: 64,
-                              color: Theme.of(context).colorScheme.error,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              tr('errorOccurred'),
-                              style: Theme.of(context).textTheme.headlineSmall,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              _error!,
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                            const SizedBox(height: 16),
-                            ElevatedButton(
-                              onPressed: _loadApps,
-                              child: Text(tr('retry')),
-                            ),
-                          ],
-                        ),
-                      )
-                    : _filteredApps.isEmpty && _allApps.isNotEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.search_off,
-                                  size: 64,
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  tr('noResultsFound'),
-                                  style: Theme.of(context).textTheme.headlineSmall,
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  tr('tryDifferentSearch'),
-                                  style: Theme.of(context).textTheme.bodyMedium,
-                                ),
-                              ],
-                            ),
-                          )
-                        : _allApps.isEmpty
-                            ? Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.apps,
-                                      size: 64,
-                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                    ),
-                                    const SizedBox(height: 16),
-                                    Text(
-                                      tr('noAppsLoaded'),
-                                      style: Theme.of(context).textTheme.headlineSmall,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      tr('loadAppsToSearch'),
-                                      style: Theme.of(context).textTheme.bodyMedium,
-                                    ),
-                                  ],
-                                ),
-                              )
-                            : ListView.builder(
-                                key: const PageStorageKey<String>('searchList'),
-                                controller: _scrollController,
-                                itemCount: _filteredApps.length,
-                                itemBuilder: (context, index) {
-                                  final app = _filteredApps[index];
-                                  return Card(
-                                    margin: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 4,
-                                    ),
-                                    child: ListTile(
-                                      leading: app.icon != null && !_failedImageUrls.contains(app.icon!)
-                                          ? CircleAvatar(
-                                              backgroundColor: Colors.white,
-                                              backgroundImage: NetworkImage(app.icon!),
-                                              onBackgroundImageError: (_, __) {
-                                                setState(() {
-                                                  _failedImageUrls.add(app.icon!);
-                                                });
-                                              },
-                                            )
-                                          : const CircleAvatar(
-                                              child: Icon(Icons.apps),
-                                            ),
-                                      title: Text(
-                                        app.name,
-                                        style: const TextStyle(fontWeight: FontWeight.bold),
-                                      ),
-                                      subtitle: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(app.description),
-                                          if (app.author != null) ...[
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              'By ${app.author}',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                              ),
-                                            ),
-                                          ],
-                                          if (app.categories.isNotEmpty || app.commercial || !app.verified) ...[
-                                            const SizedBox(height: 4),
-                                            Wrap(
-                                              spacing: 4,
-                                              runSpacing: 4,
-                                              children: [
-                                                ...app.categories.map((category) => Chip(
-                                                      label: Text(
-                                                        category,
-                                                        style: const TextStyle(fontSize: 10),
-                                                      ),
-                                                      materialTapTargetSize:
-                                                          MaterialTapTargetSize.shrinkWrap,
-                                                      visualDensity: VisualDensity.compact,
-                                                    )),
-                                                if (app.commercial)
-                                                  Chip(
-                                                    label: Text(
-                                                      'Commercial',
-                                                      style: const TextStyle(
-                                                          fontSize: 10, color: Colors.white),
-                                                    ),
-                                                    backgroundColor:
-                                                        const Color(0xFF4B0000), // Darker red
-                                                    materialTapTargetSize:
-                                                        MaterialTapTargetSize.shrinkWrap,
-                                                    visualDensity: VisualDensity.compact,
-                                                  ),
-                                                if (!app.verified)
-                                                  Chip(
-                                                    label: Text(
-                                                      'Unverified',
-                                                      style: const TextStyle(
-                                                          fontSize: 10, color: Colors.white),
-                                                    ),
-                                                    backgroundColor:
-                                                        const Color(0xFF4B0000), // Darker red
-                                                    materialTapTargetSize:
-                                                        MaterialTapTargetSize.shrinkWrap,
-                                                    visualDensity: VisualDensity.compact,
-                                                  ),
-                                              ],
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                      isThreeLine: true,
-                                      onTap: app.releasesUrl != null
-                                          ? () {
-                                              _showAddAppDialog(app);
-                                            }
-                                          : null,
-                                    ),
-                                  );
-                                },
-                              ),
-          ),
+          Expanded(child: _body()),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const AddAppPage())),
+        tooltip: tr('addApp'),
+        icon: const Icon(Icons.add),
+        label: Text(tr('add')),
       ),
     );
   }
