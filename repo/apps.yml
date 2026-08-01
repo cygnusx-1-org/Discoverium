@@ -166,6 +166,17 @@
   verified: true
   releases:
     url: https://github.com/cygnusx-1-org/continuum/releases
+- name: Continuum Beta
+  authors: Nathan Grennan
+  category: social
+  commercial: false
+  description: A Reddit client on Android written in Java. It does not have any ads and it features a clean UI and smooth browsing experience.
+  icon: https://raw.githubusercontent.com/cygnusx-1-org/continuum/refs/heads/beta/assets/logo/space_alien.png
+  id: org.cygnusx1.continuum.beta
+  type: curated
+  verified: true
+  releases:
+    url: https://github.com/cygnusx-1-org/continuum-beta/releases
 - name: Cromite
   authors: Carmelo Messina
   category: browsers
