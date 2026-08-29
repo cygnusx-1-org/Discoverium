@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:http/http.dart';
-import 'package:obtainium/providers/logs_provider.dart';
+import 'package:obtainium/core/logging/app_logger.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:yaml/yaml.dart';
 
@@ -162,12 +162,7 @@ class DiscoveriumRepo {
         try {
           apps.add(DiscoveriumApp.fromYaml(entry));
         } catch (e) {
-          unawaited(
-            LogsProvider().add(
-              'Skipping malformed Discoverium repo entry: $e',
-              level: LogLevel.warning,
-            ),
-          );
+          AppLogger.warn('Skipping malformed Discoverium repo entry: $e');
         }
       }
     }
@@ -209,12 +204,7 @@ class DiscoveriumRepo {
         if (normalizeUrl(releasesUrl) == target) return app;
       }
     } catch (e) {
-      unawaited(
-        LogsProvider().add(
-          'Discoverium repo lookup failed for $standardUrl: $e',
-          level: LogLevel.debug,
-        ),
-      );
+      AppLogger.debug('Discoverium repo lookup failed for $standardUrl: $e');
     }
     return null;
   }

@@ -31,12 +31,37 @@ extension AppsProviderUpdates on AppsProvider {
       currentApp.additionalSettings,
       currentApp: currentApp,
     );
+    if (_isReleaseYoungerThanMinAge(currentApp, newApp)) {
+      // Suppress the update until the release has reached the configured
+      // minimum age (supply-chain delay).
+      newApp = newApp.copyWith(
+        latestVersion: currentApp.latestVersion,
+        releaseDate: currentApp.releaseDate,
+        changeLog: currentApp.changeLog,
+      );
+    }
     if (currentApp.preferredApkIndex < newApp.apkUrls.length) {
       newApp = newApp.copyWith(preferredApkIndex: currentApp.preferredApkIndex);
     } else if (newApp.apkUrls.isNotEmpty) {
       newApp = newApp.copyWith(preferredApkIndex: 0);
     }
     return newApp;
+  }
+
+  /// Returns true when [newApp]'s release is newer than the configured
+  /// minimum update age and should therefore be suppressed.
+  bool _isReleaseYoungerThanMinAge(App currentApp, App newApp) {
+    final releaseDate = newApp.releaseDate;
+    if (releaseDate == null ||
+        newApp.latestVersion == currentApp.latestVersion) {
+      return false;
+    }
+    final raw = currentApp.additionalSettings['minimumUpdateAgeDays'];
+    final minAgeDays = raw is String && raw.isNotEmpty
+        ? int.tryParse(raw) ?? settingsProvider.minimumUpdateAgeDays
+        : settingsProvider.minimumUpdateAgeDays;
+    if (minAgeDays <= 0) return false;
+    return DateTime.now().difference(releaseDate) < Duration(days: minAgeDays);
   }
 
   Future<App?> checkUpdate(String appId) async {
@@ -148,7 +173,7 @@ extension AppsProviderUpdates on AppsProvider {
       // on the UI isolate. Firing every check at once saturates the event loop
       // and freezes the UI for the whole refresh. Bound the number of in-flight
       // checks so the isolate has room to render frames between them.
-      const maxConcurrent = 4;
+      const maxConcurrent = kDefaultFetchConcurrency;
       var nextIndex = 0;
 
       Future<MapEntry<App, bool>?> fetchOne(String appId) async {
@@ -158,14 +183,15 @@ extension AppsProviderUpdates on AppsProvider {
           if (newApp != null) {
             final isUpdate =
                 currentApp != null &&
-                newApp.latestVersion != currentApp.latestVersion;
+                newApp.latestVersion != currentApp.latestVersion &&
+                appHasOfferableUpdate(newApp, settingsProvider);
             return MapEntry(newApp, isUpdate);
           }
         } on HandshakeException {
           // Concurrent TLS handshakes to the same host can fail on
-          // certain devices/networks. Retry up to 5 times with
+          // certain devices/networks. Retry up to 2 times with
           // staggered random delays to avoid all retries colliding.
-          const maxRetries = 5;
+          const maxRetries = 2;
           final rng = Random();
           for (var attempt = 0; attempt < maxRetries; attempt++) {
             await Future.delayed(
@@ -176,7 +202,8 @@ extension AppsProviderUpdates on AppsProvider {
               if (newApp != null) {
                 final isUpdate =
                     currentApp != null &&
-                    newApp.latestVersion != currentApp.latestVersion;
+                    newApp.latestVersion != currentApp.latestVersion &&
+                    appHasOfferableUpdate(newApp, settingsProvider);
                 return MapEntry(newApp, isUpdate);
               }
               break;
@@ -255,6 +282,20 @@ extension AppsProviderUpdates on AppsProvider {
   }
 
   /// Finds app IDs whose installed version differs from the latest version, with optional filtering.
+  /// Whether [app]'s installed and latest versions are the same release under
+  /// its `versionExtractionRegEx`. Two strings that differ only outside what
+  /// the regex captures are not an update.
+  ///
+  /// [appHasUpdate] orders versions but knows nothing about the per-app regex,
+  /// so this is checked alongside it rather than inside it.
+  bool _versionsMatchUnderRegEx(App app) {
+    final regex =
+        (app.additionalSettings['versionExtractionRegEx'] as String?) ?? '';
+    final installed = app.installedVersion;
+    if (regex.isEmpty || installed == null) return false;
+    return doStringsMatchUnderRegEx(regex, installed, app.latestVersion);
+  }
+
   List<String> findAppIdsWithPendingUpdates({
     bool installedOnly = false,
     bool nonInstalledOnly = false,
@@ -263,14 +304,17 @@ extension AppsProviderUpdates on AppsProvider {
     for (final appId in apps.keys) {
       final app = apps[appId]!.app;
       if (installedOnly) {
-        if (appHasUpdate(app)) {
+        if (appHasOfferableUpdate(app, settingsProvider) &&
+            !_versionsMatchUnderRegEx(app)) {
           updateAppIds.add(app.id);
         }
       } else if (nonInstalledOnly) {
         if (app.installedVersion == null) {
           updateAppIds.add(app.id);
         }
-      } else if (app.installedVersion == null || appHasUpdate(app)) {
+      } else if (app.installedVersion == null ||
+          (appHasOfferableUpdate(app, settingsProvider) &&
+              !_versionsMatchUnderRegEx(app))) {
         updateAppIds.add(app.id);
       }
     }

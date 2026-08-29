@@ -36,17 +36,21 @@ Currently supported App sources:
   - [APKPure](https://apkpure.net/)
   - [Aptoide](https://aptoide.com/)
   - [Uptodown](https://uptodown.com/)
+  - [itch.io](https://itch.io/)
   - [Huawei AppGallery](https://appgallery.huawei.com/)
   - [Tencent App Store](https://sj.qq.com/)
   - [vivo App Store (CN)](https://h5.appstore.vivo.com.cn/)
   - [RuStore](https://rustore.ru/)
   - [Farsroid](https://www.farsroid.com)
-  - [CoolApk](https://coolapk.com/)
-  - [RockMods](https://rockmods.net/)
+  - [Samsung Galaxy Store](https://galaxystore.samsung.com/)
   - [LiteAPKs](https://liteapks.com/)
   - [APK4Free](https://apk4free.net/)
+  - [CoolApk](https://coolapk.com/)
+  - [SourceForge](https://sourceforge.net/)
   - Jenkins Jobs
-  - [APKMirror](https://apkmirror.com/) (Track-Only)
+  - [APKMirror](https://apkmirror.com/) *(Track-Only)*
+  - [APKCombo](https://apkcombo.com/)
+  - [RockMods](https://rockmods.net/) *(Track-Only)*
 - Other - App-Specific:
   - [Telegram App](https://telegram.org/)
   - [Neutron Code](https://neutroncode.com/)

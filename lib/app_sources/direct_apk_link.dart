@@ -50,12 +50,16 @@ class DirectAPKLink extends AppSource {
     if (!forSelection) {
       return Uri.tryParse(url)?.toString() ?? url;
     }
-    final RegExp standardUrlRegExA = RegExp('.+\\.apk\$', caseSensitive: false);
-    final match = standardUrlRegExA.firstMatch(url);
-    if (match == null) {
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        !AppSource.isApkOrContainerFile(
+          uri.path,
+          includeArchives: true,
+          includeTarballs: true,
+        )) {
       throw InvalidURLError(name);
     }
-    return match.group(0)!;
+    return url;
   }
 
   @override
@@ -87,7 +91,7 @@ class DirectAPKLink extends AppSource {
       }
       additionalSettingsNew['directAPKLink'] = true;
       additionalSettingsNew['versionDetection'] = false;
-      return html.getLatestAPKDetails(standardUrl, additionalSettingsNew);
+      return await html.getLatestAPKDetails(standardUrl, additionalSettingsNew);
     } catch (e) {
       rethrowOrWrapError(e);
     }

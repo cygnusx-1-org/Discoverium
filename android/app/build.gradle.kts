@@ -6,8 +6,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
-    id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    // The Flutter Gradle Plugin must be applied after the Android Gradle plugin.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
@@ -31,7 +30,7 @@ if (keystorePropertiesExists) {
 
 android {
     namespace = "dev.imranr.obtainium"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 37
     ndkVersion = "28.2.13676358"
 
     compileOptions {
@@ -56,6 +55,11 @@ android {
         create("normal") {
             dimension = "default"
             applicationIdSuffix = ""
+            // The default variant is what lint and the IDE resolve to when no
+            // variant is named, so `check` lints the flavor actually shipped
+            // from here. Without this AGP picks fdroid, which is built by
+            // F-Droid's own pipeline.
+            isDefault = true
         }
         create("fdroid") {
             dimension = "default"
@@ -144,6 +148,13 @@ android.applicationVariants.configureEach {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+    // ShizukuProvider is declared in this module's manifest, so this module
+    // must see the artifact that defines it. shizuku_apk_installer already
+    // pulls it in, but as `implementation`, which keeps it off every
+    // consumer's compile classpath - where lint resolves manifest class
+    // references. Same coordinates and version it already resolves to, so
+    // nothing changes in the packaged app.
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 }
 
 flutter {

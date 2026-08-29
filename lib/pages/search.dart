@@ -10,7 +10,7 @@ import 'package:obtainium/pages/add_app.dart';
 import 'package:obtainium/pages/advanced_search.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/discoverium_repo.dart';
-import 'package:obtainium/providers/logs_provider.dart';
+import 'package:obtainium/core/logging/app_logger.dart';
 import 'package:obtainium/providers/notifications_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
@@ -107,12 +107,7 @@ class SearchPageState extends State<SearchPage> {
         _recomputeFiltered();
       });
     } catch (e) {
-      unawaited(
-        LogsProvider().add(
-          'Failed to load the Discoverium app repo: $e',
-          level: LogLevel.error,
-        ),
-      );
+      AppLogger.error(e, message: 'Failed to load the Discoverium app repo');
       if (!mounted) return;
       setState(() {
         _error = e.toString();

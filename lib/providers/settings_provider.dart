@@ -11,7 +11,7 @@ import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/main.dart';
 
 import 'package:obtainium/providers/apps_provider.dart';
-import 'package:obtainium/providers/logs_provider.dart';
+import 'package:obtainium/core/logging/app_logger.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -22,9 +22,6 @@ const String obtainiumTempId = 'cygnusx-1-org_obtainium_github.com';
 const String obtainiumId = 'org.cygnusx1.discoverium';
 const String obtainiumUrl = 'https://github.com/cygnusx-1-org/Discoverium';
 const Color obtainiumThemeColor = Color(0xFF6438B5);
-
-String lowerCaseUnlessLang(String str, String lang) =>
-    currentLanguageCode == lang ? str : str.toLowerCase();
 
 Locale? tryParseLocale(String? localeString) {
   if (localeString == null) return null;
@@ -64,6 +61,7 @@ class SettingsProvider with ChangeNotifier {
   String? defaultAppDir;
   bool justStarted = true;
   bool isTV = false;
+  bool _silent = false;
 
   T? _get<T>(String key) {
     final value = prefs?.get(key);
@@ -441,12 +439,7 @@ class SettingsProvider with ChangeNotifier {
       try {
         _categoriesCache = Map<String, int>.from(jsonDecode(raw));
       } catch (e) {
-        unawaited(
-          LogsProvider().add(
-            'Corrupted categories data, resetting: $e',
-            level: LogLevel.error,
-          ),
-        );
+        AppLogger.error(e, message: 'Corrupted categories data, resetting');
         _categoriesCache = <String, int>{};
       }
     }
@@ -472,11 +465,9 @@ class SettingsProvider with ChangeNotifier {
           .toList();
       if (changedApps.isNotEmpty) {
         appsProvider.saveApps(changedApps).catchError((e) {
-          unawaited(
-            LogsProvider().add(
-              'Failed to save apps during category update: $e',
-              level: LogLevel.error,
-            ),
+          AppLogger.error(
+            e,
+            message: 'Failed to save apps during category update',
           );
         });
       }
@@ -525,6 +516,15 @@ class SettingsProvider with ChangeNotifier {
 
   set showAppDowngradeError(bool show) {
     prefs?.setBool('showAppDowngradeError', show);
+    notifyListeners();
+  }
+
+  bool get hideDowngrades {
+    return _getBool('hideDowngrades') ?? true;
+  }
+
+  set hideDowngrades(bool hide) {
+    prefs?.setBool('hideDowngrades', hide);
     notifyListeners();
   }
 
@@ -585,6 +585,15 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  bool get enableCertificatePinning {
+    return _getBool('enableCertificatePinning') ?? false;
+  }
+
+  set enableCertificatePinning(bool enableCertificatePinning) {
+    prefs?.setBool('enableCertificatePinning', enableCertificatePinning);
+    notifyListeners();
+  }
+
   bool get bgUpdatesOnWiFiOnly {
     return _getBool('bgUpdatesOnWiFiOnly') ?? false;
   }
@@ -595,11 +604,20 @@ class SettingsProvider with ChangeNotifier {
   }
 
   bool get bgUpdatesWhileChargingOnly {
-    return _getBool('bgUpdatesWhileChargingOnly') ?? false;
+    return _getBool('bgUpdatesWhileChargingOnly') ?? true;
   }
 
   set bgUpdatesWhileChargingOnly(bool val) {
     prefs?.setBool('bgUpdatesWhileChargingOnly', val);
+    notifyListeners();
+  }
+
+  bool get bgUpdatesWhileLockedOnly {
+    return _getBool('bgUpdatesWhileLockedOnly') ?? true;
+  }
+
+  set bgUpdatesWhileLockedOnly(bool val) {
+    prefs?.setBool('bgUpdatesWhileLockedOnly', val);
     notifyListeners();
   }
 
@@ -632,18 +650,18 @@ class SettingsProvider with ChangeNotifier {
 
   Future<Uri?> getExportDir() async {
     final uriString = _getString('exportDir');
-    if (uriString != null) {
-      Uri? uri = Uri.parse(uriString);
-      if (!(await saf.canRead(uri) ?? false) ||
-          !(await saf.canWrite(uri) ?? false)) {
-        uri = null;
-        await prefs?.remove('exportDir');
-        notifyListeners();
-      }
-      return uri;
-    } else {
+    if (uriString == null) {
       return null;
     }
+    final uri = Uri.parse(uriString);
+    // The directory may be temporarily unreadable (e.g. a WebDAV mount not
+    // yet available right after a reboot). Keep the stored URI so it can be
+    // retried later, and only clear it via pickExportDir.
+    if (!(await saf.canRead(uri) ?? false) ||
+        !(await saf.canWrite(uri) ?? false)) {
+      return null;
+    }
+    return uri;
   }
 
   Future<void> pickExportDir({bool remove = false}) async {
@@ -654,12 +672,7 @@ class SettingsProvider with ChangeNotifier {
       try {
         newOneWayDataSyncDir = (await saf.openDocumentTree());
       } catch (e) {
-        unawaited(
-          LogsProvider().add(
-            'Failed to open document tree: $e',
-            level: LogLevel.error,
-          ),
-        );
+        AppLogger.error(e, message: 'Failed to open document tree');
         throw ObtainiumError(tr('noFilePickerAvailable'));
       }
     }
@@ -689,12 +702,63 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  String? get autoExportFileName => getSettingString('autoExportFileName');
+
+  set autoExportFileName(String? val) {
+    final cleaned = val?.replaceAll(RegExp(r'[/\\:*?"<>|]'), '').trim();
+    if (cleaned == null || cleaned.isEmpty) {
+      prefs?.remove('autoExportFileName');
+    } else {
+      prefs?.setString('autoExportFileName', cleaned);
+    }
+    notifyListeners();
+  }
+
+  String? get globalApkFilterRegEx => getSettingString('globalApkFilterRegEx');
+
+  set globalApkFilterRegEx(String? val) {
+    final cleaned = val?.trim();
+    if (cleaned == null || cleaned.isEmpty) {
+      prefs?.remove('globalApkFilterRegEx');
+    } else {
+      prefs?.setString('globalApkFilterRegEx', cleaned);
+    }
+    notifyListeners();
+  }
+
   bool get onlyCheckInstalledOrTrackOnlyApps {
     return _getBool('onlyCheckInstalledOrTrackOnlyApps') ?? false;
   }
 
   set onlyCheckInstalledOrTrackOnlyApps(bool val) {
     prefs?.setBool('onlyCheckInstalledOrTrackOnlyApps', val);
+    notifyListeners();
+  }
+
+  bool get collapseGroupsOnStartup {
+    return _getBool('collapseGroupsOnStartup') ?? false;
+  }
+
+  set collapseGroupsOnStartup(bool val) {
+    prefs?.setBool('collapseGroupsOnStartup', val);
+    notifyListeners();
+  }
+
+  bool get skipBulkUpdateConfirmation {
+    return _getBool('skipBulkUpdateConfirmation') ?? false;
+  }
+
+  set skipBulkUpdateConfirmation(bool val) {
+    prefs?.setBool('skipBulkUpdateConfirmation', val);
+    notifyListeners();
+  }
+
+  int get minimumUpdateAgeDays {
+    return _getInt('minimumUpdateAgeDays') ?? 0;
+  }
+
+  set minimumUpdateAgeDays(int val) {
+    prefs?.setInt('minimumUpdateAgeDays', val < 0 ? 0 : val);
     notifyListeners();
   }
 
@@ -707,8 +771,17 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  bool get exportInstalledOnly {
+    return _getBool('exportInstalledOnly') ?? false;
+  }
+
+  set exportInstalledOnly(bool val) {
+    prefs?.setBool('exportInstalledOnly', val);
+    notifyListeners();
+  }
+
   bool get parallelDownloads {
-    return _getBool('parallelDownloads') ?? false;
+    return _getBool('parallelDownloads') ?? true;
   }
 
   set parallelDownloads(bool val) {
@@ -763,9 +836,7 @@ class SettingsProvider with ChangeNotifier {
     }
     final legacyBool = _getBool('showActionBannerForUpdateOnly');
     if (legacyBool != null) {
-      return legacyBool
-          ? ActionBannerMode.updatesOnly
-          : ActionBannerMode.all;
+      return legacyBool ? ActionBannerMode.updatesOnly : ActionBannerMode.all;
     }
     return ActionBannerMode.updatesOnly;
   }
@@ -791,5 +862,27 @@ class SettingsProvider with ChangeNotifier {
   set shizukuPretendToBeGooglePlay(bool val) {
     prefs?.setBool('shizukuPretendToBeGooglePlay', val);
     notifyListeners();
+  }
+
+  /// Runs [updates] with listener notifications suppressed, then calls
+  /// [notifyListeners] once at the end. Use this when multiple settings
+  /// are being changed together to avoid unnecessary rebuilds.
+  /// TODO: modify individual setter methods to skip their own
+  /// notifyListeners() calls when batched.
+  void batchUpdate(void Function() updates) {
+    _silent = true;
+    try {
+      updates();
+    } finally {
+      _silent = false;
+      notifyListeners();
+    }
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_silent) {
+      super.notifyListeners();
+    }
   }
 }

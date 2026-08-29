@@ -3,16 +3,18 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:http/http.dart';
-import 'package:obtainium/app_sources/html.dart';
+import 'package:obtainium/utils/string_compare.dart';
 import 'package:obtainium/components/generated_form_model.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/providers/apps_provider.dart';
+import 'package:obtainium/core/logging/app_logger.dart';
 import 'package:obtainium/providers/discoverium_repo.dart';
-import 'package:obtainium/providers/logs_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
 
 class GitHub extends AppSource {
+  static const int _fallbackCacheSeconds = 3600;
+
   GitHub({bool hostChanged = false}) {
     name = 'GitHub';
     hosts = ['github.com'];
@@ -220,18 +222,14 @@ class GitHub extends AppSource {
               return appIds.first;
             }
           } catch (err) {
-            unawaited(
-              LogsProvider().add(
-                'Error parsing build.gradle from ${res.request?.url.toString() ?? standardUrl}: ${err.toString()}',
-              ),
+            AppLogger.info(
+              'Error parsing build.gradle from ${res.request?.url.toString() ?? standardUrl}: ${err.toString()}',
             );
           }
         }
       } catch (err) {
-        unawaited(
-          LogsProvider().add(
-            'Failed to extract ID from build.gradle or APK: ${err.toString()}',
-          ),
+        AppLogger.info(
+          'Failed to extract ID from build.gradle or APK: ${err.toString()}',
         );
       }
     }
@@ -366,10 +364,8 @@ class GitHub extends AppSource {
         try {
           newUrl = jsonDecode(res2.body)['html_url'];
         } catch (e) {
-          unawaited(
-            LogsProvider().add(
-              'Failed to parse redirect response for repo rename: ${e.toString()}',
-            ),
+          AppLogger.info(
+            'Failed to parse redirect response for repo rename: ${e.toString()}',
           );
         }
         if (newUrl != null) {
@@ -464,9 +460,15 @@ class GitHub extends AppSource {
       if (b == null) return 1;
 
       if (isDateOnly) {
-        final dateA = dates.putIfAbsent(a, () => _getReleaseDateFromRelease(a, useLatestAssetDateAsReleaseDate));
-        final dateB = dates.putIfAbsent(b, () => _getReleaseDateFromRelease(b, useLatestAssetDateAsReleaseDate));
-        return (dateA ?? DateTime(1)).compareTo(dateB ?? DateTime(0));
+        final dateA = dates.putIfAbsent(
+          a,
+          () => _getReleaseDateFromRelease(a, useLatestAssetDateAsReleaseDate),
+        );
+        final dateB = dates.putIfAbsent(
+          b,
+          () => _getReleaseDateFromRelease(b, useLatestAssetDateAsReleaseDate),
+        );
+        return (dateA ?? DateTime(0)).compareTo(dateB ?? DateTime(0));
       }
 
       final nameA = a['tag_name'] ?? a['name'];
@@ -474,15 +476,25 @@ class GitHub extends AppSource {
       final stdFormats = formats[a]!.intersection(formats[b]!);
 
       if (sortMethod == 'smartname-datefallback' && stdFormats.isEmpty) {
-        final dateA = _getReleaseDateFromRelease(a, useLatestAssetDateAsReleaseDate);
-        final dateB = _getReleaseDateFromRelease(b, useLatestAssetDateAsReleaseDate);
-        return (dateA ?? DateTime(1)).compareTo(dateB ?? DateTime(0));
+        final dateA = _getReleaseDateFromRelease(
+          a,
+          useLatestAssetDateAsReleaseDate,
+        );
+        final dateB = _getReleaseDateFromRelease(
+          b,
+          useLatestAssetDateAsReleaseDate,
+        );
+        return (dateA ?? DateTime(0)).compareTo(dateB ?? DateTime(0));
       }
 
       if (sortMethod != 'name' && stdFormats.isNotEmpty) {
         final sortedFormats = stdFormats.toList()
           ..sort((x, y) => y.length.compareTo(x.length));
-        final reg = RegExp(sortedFormats.first);
+        final regCache = <String, RegExp>{};
+        final reg = regCache.putIfAbsent(
+          sortedFormats.first,
+          () => RegExp(sortedFormats.first),
+        );
         final matchA = reg.firstMatch(nameA);
         final matchB = reg.firstMatch(nameB);
         if (matchA == null || matchB == null) {
@@ -517,6 +529,51 @@ class GitHub extends AppSource {
     }
   }
 
+  /// Notes for the newest few releases, newest first, taken from the response
+  /// the update check already made. The detail page shows the installed
+  /// version and its neighbour, so a short window covers it without another
+  /// request; anything older is fetched on demand.
+  static const int _recentReleaseNotesCount = 5;
+
+  /// A release body longer than this is not cached. Bodies have no practical
+  /// upper bound on GitHub, and every one kept here is written back to the
+  /// app's record on each save and carried in every export; the page fetches
+  /// the rare huge one on demand instead.
+  static const int _recentReleaseNotesMaxLength = 8192;
+
+  List<ReleaseNotes> _recentReleaseNotes(
+    List<dynamic> releases,
+    bool includePrereleases,
+    bool titleAsVersion,
+  ) {
+    final recent = <ReleaseNotes>[];
+    for (final release in releases) {
+      if (recent.length >= _recentReleaseNotesCount) break;
+      if (release is! Map) continue;
+      if (release['draft'] == true) continue;
+      if (release['prerelease'] == true && !includePrereleases) continue;
+      final tag = release['tag_name']?.toString();
+      final name = release['name']?.toString();
+      // Mirrors _selectGitHubTargetRelease exactly, including its fallback to
+      // the tag for an untitled release. Deriving it any other way would drop
+      // releases the app does count, leaving gaps that make the release before
+      // a version look like the one before that.
+      final title = name == null || name.trim().isEmpty ? (tag ?? '') : name;
+      final version = titleAsVersion ? title : (tag ?? name);
+      // Stop for the same reason as an oversized body: a release this cannot
+      // name is one the list cannot step over without the entries either side
+      // of it becoming neighbours they are not.
+      if (version == null || version.isEmpty) break;
+      final body = (release['body'] ?? '').toString().trim();
+      // Stop rather than skip: the page reads the release before a version as
+      // the next entry down, so the list has to stay contiguous. A shorter
+      // list just means the page fetches when it needs to reach past it.
+      if (body.length > _recentReleaseNotesMaxLength) break;
+      recent.add(ReleaseNotes(version, body.isEmpty ? null : body));
+    }
+    return recent;
+  }
+
   dynamic _selectGitHubTargetRelease({
     required List<dynamic> releases,
     required bool fallbackToOlderReleases,
@@ -528,28 +585,32 @@ class GitHub extends AppSource {
     required Map<String, dynamic> additionalSettings,
     required Map<String, String> sourceConfigSettingValues,
   }) {
-    var prereleaseSkipped = 0;
+    var releaseSkipped = 0;
+    final titleRegex = regexFilter != null ? RegExp(regexFilter) : null;
+    final notesRegex = regexNotesFilter != null
+        ? RegExp(regexNotesFilter)
+        : null;
     for (int i = 0; i < releases.length; i++) {
-      if (!fallbackToOlderReleases && i > prereleaseSkipped) break;
+      if (!fallbackToOlderReleases && i > releaseSkipped) break;
       if (!includePrereleases && releases[i]['prerelease'] == true) {
-        prereleaseSkipped++;
+        releaseSkipped++;
         continue;
       }
       if (releases[i]['draft'] == true) {
+        releaseSkipped++;
         continue;
       }
       var nameToFilter = releases[i]['name'] as String?;
       if (nameToFilter == null || nameToFilter.trim().isEmpty) {
         nameToFilter = releases[i]['tag_name']?.toString() ?? '';
       }
-      if (regexFilter != null &&
-          !RegExp(regexFilter).hasMatch(nameToFilter.trim())) {
+      if (titleRegex != null && !titleRegex.hasMatch(nameToFilter.trim())) {
         continue;
       }
-      if (regexNotesFilter != null &&
-          !RegExp(
-            regexNotesFilter,
-          ).hasMatch(((releases[i]['body'] as String?) ?? '').trim())) {
+      if (notesRegex != null &&
+          !notesRegex.hasMatch(
+            ((releases[i]['body'] as String?) ?? '').trim(),
+          )) {
         continue;
       }
       final allAssetsWithUrls = _findReleaseAssetUrls(
@@ -751,6 +812,11 @@ class GitHub extends AppSource {
         changeLog: changeLog.isEmpty ? null : changeLog,
         allAssetUrls:
             targetRelease['allAssetUrls'] as List<MapEntry<String, String>>,
+        recentReleases: _recentReleaseNotes(
+          releases,
+          includePrereleases,
+          additionalSettings['releaseTitleAsVersion'] == true,
+        ),
       );
     } else {
       if (onHttpErrorCode != null) {
@@ -806,6 +872,169 @@ class GitHub extends AppSource {
     } catch (e) {
       rethrowOrWrapError(e);
     }
+  }
+
+  /// The release notes GitHub publishes for [version], or null when that
+  /// release has no body or cannot be found.
+  ///
+  /// [getLatestAPKDetails] only carries the notes of the release it selected,
+  /// so reading the notes of an already-installed version means asking again.
+  /// Tags are matched leniently because a repo may tag `v1.2.3` while the
+  /// version string is `1.2.3`.
+  Future<String?> getReleaseNotesForVersion(
+    String standardUrl,
+    Map<String, dynamic> additionalSettings,
+    String version,
+  ) async {
+    final apiUrl = await convertStandardUrlToAPIUrl(
+      standardUrl,
+      additionalSettings,
+    );
+    final wanted = _bareVersion(version);
+    // Ask for the single release by tag first: the releases list runs to
+    // hundreds of KB on a repo with any history, and reaches back only 100
+    // releases, so an older installed version finds nothing in it.
+    for (final tag in {version.trim(), 'v$wanted'}) {
+      if (tag.isEmpty) continue;
+      final byTag = await sourceRequest(
+        '$apiUrl/releases/tags/${Uri.encodeComponent(tag)}',
+        additionalSettings,
+      );
+      if (byTag.statusCode == 404) continue;
+      if (byTag.statusCode != 200) {
+        rateLimitErrorCheck(byTag);
+        throw getObtainiumHttpError(byTag);
+      }
+      final release = jsonDecode(byTag.body);
+      if (release is! Map) break;
+      final body = (release['body'] ?? '').toString().trim();
+      return body.isEmpty ? null : body;
+    }
+    // The tag may not be the version string at all (a prefix other than `v`, a
+    // version read out of the release title), so fall back to the list.
+    final res = await sourceRequest(
+      '$apiUrl/releases?per_page=100',
+      additionalSettings,
+    );
+    if (res.statusCode != 200) {
+      rateLimitErrorCheck(res);
+      throw getObtainiumHttpError(res);
+    }
+    final decoded = jsonDecode(res.body);
+    if (decoded is! List) return null;
+    for (final release in decoded) {
+      if (release is! Map) continue;
+      final candidates = [
+        release['tag_name']?.toString(),
+        release['name']?.toString(),
+      ].whereType<String>();
+      if (!candidates.any((c) => _bareVersion(c) == wanted)) continue;
+      final body = (release['body'] ?? '').toString().trim();
+      return body.isEmpty ? null : body;
+    }
+    return null;
+  }
+
+  /// The release published immediately before [version], with the notes it
+  /// carries, or null when there is no older release to show.
+  ///
+  /// Only the newest few releases are fetched: the previous release is
+  /// adjacent to the current one in all but pathological cases, and the full
+  /// list runs to hundreds of KB. Drafts are always skipped, and prereleases
+  /// are skipped unless the app opted into them, so this picks the same
+  /// releases an update check would.
+  Future<({String version, String? notes})?> getPreviousRelease(
+    String standardUrl,
+    Map<String, dynamic> additionalSettings,
+    String version,
+  ) async {
+    final apiUrl = await convertStandardUrlToAPIUrl(
+      standardUrl,
+      additionalSettings,
+    );
+    final res = await sourceRequest(
+      '$apiUrl/releases?per_page=10',
+      additionalSettings,
+    );
+    if (res.statusCode != 200) {
+      rateLimitErrorCheck(res);
+      throw getObtainiumHttpError(res);
+    }
+    final decoded = jsonDecode(res.body);
+    if (decoded is! List) return null;
+    final wanted = _bareVersion(version);
+    final includePrereleases = additionalSettings['includePrereleases'] == true;
+    final titleAsVersion = additionalSettings['releaseTitleAsVersion'] == true;
+    var passedCurrent = false;
+    for (final release in decoded) {
+      if (release is! Map) continue;
+      if (release['draft'] == true) continue;
+      final tag = release['tag_name']?.toString();
+      final name = release['name']?.toString();
+      if (!passedCurrent) {
+        passedCurrent = [
+          tag,
+          name,
+        ].whereType<String>().any((c) => _bareVersion(c) == wanted);
+        continue;
+      }
+      if (release['prerelease'] == true && !includePrereleases) continue;
+      // Same rule getLatestAPKDetails uses, so the label matches what an
+      // update would have called this version.
+      final previous = titleAsVersion ? name : (tag ?? name);
+      if (previous == null || previous.isEmpty) continue;
+      final body = (release['body'] ?? '').toString().trim();
+      return (version: previous, notes: body.isEmpty ? null : body);
+    }
+    return null;
+  }
+
+  /// A tag or release title reduced to the part that identifies the version,
+  /// so `v1.2.3` and `1.2.3` compare equal.
+  static String _bareVersion(String raw) =>
+      raw.trim().replaceFirst(RegExp(r'^[vV](?=\d)'), '');
+
+  /// Release notes with bare `#123` issue references turned into links to the
+  /// repository [standardUrl] belongs to.
+  ///
+  /// GitHub's own web view links these, but the API hands back the raw
+  /// markdown, where the reference is just text. The repository comes from the
+  /// app's own URL, so this works for any host and any owner/repo.
+  ///
+  /// Anything already inside code, a link, or a URL is passed through
+  /// untouched, so a `#` that belongs to one of those is left alone.
+  static String linkIssueReferences(String markdown, String standardUrl) {
+    final repoUrl = _repoWebUrl(standardUrl);
+    if (repoUrl == null) return markdown;
+    return markdown.replaceAllMapped(_issueReferencePattern, (match) {
+      final passthrough = match.group(1);
+      if (passthrough != null) return passthrough;
+      final number = match.group(2)!;
+      return '[#$number]($repoUrl/issues/$number)';
+    });
+  }
+
+  /// The first alternative matches everything that must survive untouched —
+  /// fenced and inline code, existing links and images, autolinks, bare URLs —
+  /// so the alternation consumes it before the reference branch can. The
+  /// second matches a `#123` that starts a word, which is what GitHub treats
+  /// as an issue reference; `owner/repo#123` and `&#8212;` are excluded by the
+  /// lookbehind.
+  static final RegExp _issueReferencePattern = RegExp(
+    r'(```[\s\S]*?```|`[^`\n]*`|!?\[[^\]]*\]\([^)]*\)|<[^>\s]+>|'
+    r'[a-zA-Z][a-zA-Z0-9+.-]*://\S+)'
+    r'|(?<![\w/&#-])#(\d+)\b',
+  );
+
+  /// `https://host/owner/repo` for [standardUrl], or null when it does not
+  /// name a repository.
+  static String? _repoWebUrl(String standardUrl) {
+    final uri = Uri.tryParse(standardUrl.trim());
+    if (uri == null || uri.host.isEmpty) return null;
+    if (uri.scheme != 'http' && uri.scheme != 'https') return null;
+    final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+    if (segments.length < 2) return null;
+    return '${uri.origin}/${segments[0]}/${segments[1]}';
   }
 
   /// The curated repo's display name/author when this URL is in it, otherwise
@@ -905,7 +1134,7 @@ class GitHub extends AppSource {
       final now = DateTime.now();
       final resetEpochSeconds =
           int.tryParse(res.headers['x-ratelimit-reset'] ?? '') ??
-          now.millisecondsSinceEpoch ~/ 1000 + 3600;
+          now.millisecondsSinceEpoch ~/ 1000 + _fallbackCacheSeconds;
       final nowSeconds = now.millisecondsSinceEpoch ~/ 1000;
       final remainingMinutes = ((resetEpochSeconds - nowSeconds) / 60)
           .ceil()

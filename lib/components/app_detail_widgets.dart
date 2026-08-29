@@ -2,15 +2,16 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:obtainium/components/ui_widgets.dart';
 import 'package:obtainium/custom_errors.dart';
+import 'package:obtainium/utils/locale_utils.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:provider/provider.dart';
 
-String appInstalledVersionText(App? app) {
+String appInstalledVersionText(App? app, SettingsProvider settingsProvider) {
   final installed = app?.installedVersion;
   if (installed == null) return tr('notInstalled');
-  final upToDate = app == null || !appHasUpdate(app);
+  final upToDate = app == null || !appHasOfferableUpdate(app, settingsProvider);
   return '$installed ${tr('installed')}${upToDate ? ' / ${tr('latest')}' : ''}';
 }
 
@@ -58,7 +59,10 @@ class AppInfoDialog extends StatelessWidget {
           ),
           Text(app.app.id, style: textTheme.labelSmall),
           const SizedBox(height: 8),
-          Text(appInstalledVersionText(app.app), style: textTheme.bodyMedium),
+          Text(
+            appInstalledVersionText(app.app, context.read<SettingsProvider>()),
+            style: textTheme.bodyMedium,
+          ),
           Text(
             tr(
               'lastUpdateCheckX',
@@ -130,10 +134,12 @@ class _AppFilePickerState extends State<AppFilePicker> {
               groupValue: fileUrl!.value,
               onChanged: (String? val) {
                 setState(() {
-                  fileUrl = urlsToSelectFrom.firstWhere(
-                    (e) => e.value == val,
-                    orElse: () => urlsToSelectFrom.first,
-                  );
+                  fileUrl = urlsToSelectFrom.isNotEmpty
+                      ? urlsToSelectFrom.firstWhere(
+                          (e) => e.value == val,
+                          orElse: () => urlsToSelectFrom.first,
+                        )
+                      : fileUrl;
                 });
               },
               child: Column(
@@ -177,9 +183,8 @@ class _AppFilePickerState extends State<AppFilePicker> {
                                 list2FriendlyString(
                                   widget.archs!.map((e) => '\'$e\'').toList(),
                                 ),
-                      style: const TextStyle(
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         fontStyle: FontStyle.italic,
-                        fontSize: 12,
                       ),
                     ),
                 ],

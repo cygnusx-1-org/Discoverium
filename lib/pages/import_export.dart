@@ -9,11 +9,38 @@ import 'package:obtainium/components/generated_form_renderer.dart';
 import 'package:obtainium/components/ui_widgets.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/providers/apps_provider.dart';
-import 'package:obtainium/providers/logs_provider.dart';
+import 'package:obtainium/core/logging/app_logger.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
+
+/// Shows a blocking dialog warning that an "include all settings" export
+/// embeds potentially sensitive values in cleartext.
+/// Returns true if the user chooses to export anyway.
+Future<bool> confirmExportIncludesSecrets(BuildContext context) async {
+  final proceed = await showDialog<bool>(
+    context: context,
+    builder: (BuildContext ctx) {
+      return AlertDialog(
+        title: Text(tr('warning')),
+        content: Text(tr('exportIncludesSecretsWarning')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(tr('cancel')),
+          ),
+          FilledButton.tonal(
+            autofocus: true,
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(tr('continue')),
+          ),
+        ],
+      );
+    },
+  );
+  return proceed == true;
+}
 
 class ImportFromURLListPage extends StatefulWidget {
   const ImportFromURLListPage({super.key});
@@ -124,12 +151,24 @@ class _ImportFromURLListPageState extends State<ImportFromURLListPage> {
                         OutlinedButton.icon(
                           onPressed: controller.isImporting
                               ? null
-                              : () => controller.importFromFile(context),
+                              : () {
+                                  context
+                                      .read<SettingsProvider>()
+                                      .selectionClick();
+                                  controller.importFromFile(context);
+                                },
                           icon: const Icon(Icons.upload_file_outlined),
                           label: Text(tr('importFromURLsInFile')),
                         ),
                         FilledButton(
-                          onPressed: controller.isImporting ? null : _import,
+                          onPressed: controller.isImporting
+                              ? null
+                              : () {
+                                  context
+                                      .read<SettingsProvider>()
+                                      .selectionClick();
+                                  _import();
+                                },
                           child: controller.isImporting
                               ? const SizedBox(
                                   width: 20,
@@ -145,10 +184,8 @@ class _ImportFromURLListPageState extends State<ImportFromURLListPage> {
                           child: Text(
                             tr('importedAppsIdDisclaimer'),
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontStyle: FontStyle.italic,
-                              fontSize: 12,
-                            ),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(fontStyle: FontStyle.italic),
                           ),
                         ),
                       ],
@@ -164,8 +201,8 @@ class _ImportFromURLListPageState extends State<ImportFromURLListPage> {
   }
 }
 
-/// The app-import controls (file import, source search, URL-list import, mass
-/// sources). Embedded in the Add App page (shown while no URL is entered).
+/// The app-import controls (file import, URL-list import, mass sources).
+/// Embedded in the Settings → Import/Export page.
 class ImportSection extends StatefulWidget {
   const ImportSection({super.key});
 
@@ -183,14 +220,11 @@ class _ImportSectionState extends State<ImportSection> {
 
     void runObtainiumImport() {
       settingsProvider.selectionClick();
-      FilePicker.pickFiles()
-          .then((result) async {
-            if (result == null) {
+      FilePicker.pickFile()
+          .then((file) async {
+            if (file == null) {
               if (!context.mounted) return;
               showMessage(tr('cancelled'), context);
-              return;
-            }
-            if (result.files.isEmpty) {
               return;
             }
             if (mounted) {
@@ -198,11 +232,17 @@ class _ImportSectionState extends State<ImportSection> {
                 importInProgress = true;
               });
             }
-            final path = result.files.single.path;
-            if (path == null) {
-              throw ObtainiumError(tr('noFilePickerAvailable'));
+            final String data;
+            if (file.path != null) {
+              data = await File(file.path!).readAsString();
+            } else {
+              final bytesData = await file.readAsBytes();
+              if (bytesData.isNotEmpty) {
+                data = utf8.decode(bytesData);
+              } else {
+                throw ObtainiumError(tr('noFilePickerAvailable'));
+              }
             }
-            final String data = await File(path).readAsString();
             try {
               jsonDecode(data);
             } catch (e) {
@@ -352,7 +392,7 @@ class _ImportSectionState extends State<ImportSection> {
 }
 
 /// The app-export controls (export dir picker, export action, auto-export and
-/// settings-inclusion options). Embedded in the Settings page.
+/// settings-inclusion options). Embedded in the Settings → Import/Export page.
 class ExportSection extends StatefulWidget {
   const ExportSection({super.key});
 
@@ -377,6 +417,10 @@ class _ExportSectionState extends State<ExportSection> {
 
     Future<void> runObtainiumExport({bool pickOnly = false}) async {
       settingsProvider.selectionClick();
+      if (!pickOnly && settingsProvider.exportSettings >= 2) {
+        final proceed = await confirmExportIncludesSecrets(context);
+        if (!proceed) return;
+      }
       unawaited(
         appsProvider
             .export(
@@ -439,6 +483,31 @@ class _ExportSectionState extends State<ExportSection> {
                 value: settingsProvider.autoExportOnChanges,
                 onChanged: (value) =>
                     settingsProvider.autoExportOnChanges = value,
+              ),
+            ),
+            ConnectedCard(
+              isFirst: false,
+              isLast: false,
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+              child: TextFormField(
+                initialValue: settingsProvider.autoExportFileName ?? '',
+                decoration: InputDecoration(
+                  labelText: tr('autoExportFileName'),
+                  hintText: tr('obtainiumExportHyphenatedLowercase'),
+                  border: InputBorder.none,
+                ),
+                onChanged: (value) =>
+                    settingsProvider.autoExportFileName = value,
+              ),
+            ),
+            ConnectedCard(
+              isFirst: false,
+              isLast: false,
+              child: ToggleTile(
+                label: tr('exportInstalledOnly'),
+                value: settingsProvider.exportInstalledOnly,
+                onChanged: (value) =>
+                    settingsProvider.exportInstalledOnly = value,
               ),
             ),
             ConnectedCard(
@@ -583,6 +652,7 @@ class _SelectionModalState extends State<SelectionModal> {
   }
 
   void selectAll({bool deselect = false}) {
+    context.read<SettingsProvider>().selectionClick();
     for (var e in entrySelections.keys) {
       entrySelections[e] = !deselect;
     }
@@ -630,6 +700,7 @@ class _SelectionModalState extends State<SelectionModal> {
   }
 
   void _selectThis(MapEntry<String, List<String>> entry, bool? value) {
+    context.read<SettingsProvider>().selectionClick();
     setState(() {
       value ??= false;
       if (value! && widget.onlyOneSelectionAllowed) {
@@ -659,9 +730,8 @@ class _SelectionModalState extends State<SelectionModal> {
         if (widget.titlesAreLinks)
           Text(
             Uri.parse(entry.key).host,
-            style: const TextStyle(
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
               decoration: TextDecoration.underline,
-              fontSize: 12,
             ),
           ),
       ],
@@ -675,7 +745,9 @@ class _SelectionModalState extends State<SelectionModal> {
             entry.value[1].length > 128
                 ? '${entry.value[1].substring(0, 128)}...'
                 : entry.value[1],
-            style: const TextStyle(fontStyle: FontStyle.italic, fontSize: 12),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
           );
   }
 
@@ -785,20 +857,23 @@ class _SelectionModalState extends State<SelectionModal> {
     final isTV = context.read<SettingsProvider>().isTV;
     final Map<MapEntry<String, List<String>>, bool> filteredEntrySelections =
         {};
+    final filterRegexCompiled = filterRegex.isEmpty
+        ? null
+        : RegExp(filterRegex);
+    final filterRegexCompiledCI = filterRegex.isEmpty
+        ? null
+        : RegExp(filterRegex, caseSensitive: false);
     entrySelections.forEach((key, value) {
       final searchableText = key.value.isEmpty ? key.key : key.value[0];
-      if (filterRegex.isEmpty || RegExp(filterRegex).hasMatch(searchableText)) {
+      if (filterRegexCompiled == null ||
+          filterRegexCompiled.hasMatch(searchableText)) {
         filteredEntrySelections.putIfAbsent(key, () => value);
       }
     });
     if (filterRegex.isNotEmpty && filteredEntrySelections.isEmpty) {
       entrySelections.forEach((key, value) {
         final searchableText = key.value.isEmpty ? key.key : key.value[0];
-        if (filterRegex.isEmpty ||
-            RegExp(
-              filterRegex,
-              caseSensitive: false,
-            ).hasMatch(searchableText)) {
+        if (filterRegexCompiledCI!.hasMatch(searchableText)) {
           filteredEntrySelections.putIfAbsent(key, () => value);
         }
       });
@@ -810,6 +885,7 @@ class _SelectionModalState extends State<SelectionModal> {
         .firstOrNull;
     void onRadioChanged(String? value) {
       if (value == null) return;
+      context.read<SettingsProvider>().selectionClick();
       if (isTV) {
         Navigator.of(context).pop([value]);
       } else {
@@ -921,9 +997,9 @@ class ImportFromURLListController extends ChangeNotifier {
 
   Future<void> importFromFile(BuildContext context) async {
     try {
-      final result = await FilePicker.pickFiles();
-      if (result != null && result.files.isNotEmpty) {
-        final path = result.files.single.path;
+      final file = await FilePicker.pickFile();
+      if (file != null && file.path != null) {
+        final path = file.path;
         if (path == null) return;
         final urls = RegExp(r'https?://[^\s"]+')
             .allMatches(await File(path).readAsString())
@@ -935,12 +1011,7 @@ class ImportFromURLListController extends ChangeNotifier {
                 sourceProvider.getSource(url);
                 return true;
               } catch (e) {
-                unawaited(
-                  LogsProvider().add(
-                    'URL parse error in filter: $e',
-                    level: LogLevel.error,
-                  ),
-                );
+                AppLogger.error(e, message: 'URL parse error in filter');
                 return false;
               }
             })

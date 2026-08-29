@@ -92,7 +92,13 @@
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <!-- An app updater has to read the installed version of whatever apps the
+         user has added, which are arbitrary and not knowable in advance, so no
+         <queries> declaration can express it. This is one of the permitted
+         use cases for the permission. -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Required to query activities that can process text, see:

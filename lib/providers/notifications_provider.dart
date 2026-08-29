@@ -9,13 +9,18 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:obtainium/main.dart';
-import 'package:obtainium/providers/apps_provider.dart' show formatDownloadSize;
+import 'package:obtainium/utils/format_utils.dart' show formatDownloadSize;
+import 'package:obtainium/utils/nav_helper.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
 
 /// Prefix for the download-notification Cancel action id; the app ID is appended
 /// so the tap handler knows which download to stop.
 const String cancelDownloadActionPrefix = 'cancel_download::';
+
+/// Prefix marking a notification payload that carries an app ID; tapping such a
+/// notification opens that app's detail page.
+const String appIdTapPayloadPrefix = 'appIdTap::';
 
 const int updateNotificationId = 2;
 const int silentUpdateNotificationId = 3;
@@ -33,6 +38,7 @@ const int downloadNotificationIdRange = 2000000000;
 /// Name under which the main isolate registers a port to receive download-cancel
 /// requests forwarded from the notification-action background isolate.
 const String _downloadCancelPortName = 'obtainium_download_cancel';
+ReceivePort? _downloadCancelPort;
 
 /// The app ID targeted by a download-cancel notification action, or null if
 /// [actionId] isn't a download-cancel action.
@@ -84,6 +90,7 @@ class ObtainiumNotification {
   int? progPercent;
   bool onlyAlertOnce;
   String? payload;
+  String? appId;
   List<AndroidNotificationAction>? androidActions;
 
   ObtainiumNotification(
@@ -97,6 +104,7 @@ class ObtainiumNotification {
     this.onlyAlertOnce = false,
     this.progPercent,
     this.payload,
+    this.appId,
     this.androidActions,
   });
 }
@@ -116,6 +124,7 @@ class UpdateNotification extends ObtainiumNotification {
         tr('updatesAvailableNotifChannel'),
         tr('updatesAvailableNotifDescription'),
         Importance.max,
+        appId: updates.length == 1 ? updates.first.id : null,
       );
 }
 
@@ -134,6 +143,7 @@ class TrackOnlyUpdateNotification extends ObtainiumNotification {
         tr('updatesAvailableNotifChannel'),
         tr('updatesAvailableNotifDescription'),
         Importance.max,
+        appId: updates.length == 1 ? updates.first.id : null,
       );
 }
 
@@ -154,6 +164,7 @@ class SilentUpdateNotification extends ObtainiumNotification {
         tr('appsUpdatedNotifChannel'),
         tr('appsUpdatedNotifDescription'),
         Importance.defaultImportance,
+        appId: updates.length == 1 ? updates.first.id : null,
       );
 }
 
@@ -172,6 +183,7 @@ class SilentUpdateAttemptNotification extends ObtainiumNotification {
         tr('appsPossiblyUpdatedNotifChannel'),
         tr('appsPossiblyUpdatedNotifDescription'),
         Importance.defaultImportance,
+        appId: updates.length == 1 ? updates.first.id : null,
       );
 }
 
@@ -325,16 +337,22 @@ class NotificationsProvider {
     if (prevPort != null) {
       IsolateNameServer.removePortNameMapping(_downloadCancelPortName);
     }
-    final port = ReceivePort();
+    _downloadCancelPort?.close();
+    _downloadCancelPort = ReceivePort();
     IsolateNameServer.registerPortWithName(
-      port.sendPort,
+      _downloadCancelPort!.sendPort,
       _downloadCancelPortName,
     );
-    port.listen((message) {
+    _downloadCancelPort!.listen((message) {
       if (message is String && message.isNotEmpty) {
         onDownloadCancelRequested?.call(message);
       }
     });
+  }
+
+  static void dispose() {
+    _downloadCancelPort?.close();
+    _downloadCancelPort = null;
   }
 
   Future<void> checkLaunchByNotif() async {
@@ -349,30 +367,39 @@ class NotificationsProvider {
   }
 
   void _showNotificationPayload(String? payload, {bool doublePop = false}) {
-    if (payload?.isNotEmpty == true) {
-      final lines = payload!.split('\n');
-      final title = lines.first;
-      final content = lines.sublist(1).join('\n');
-      appNavigatorKey.currentState?.push(
-        PageRouteBuilder(
-          pageBuilder: (context, _, _) => AlertDialog(
-            title: Text(title),
-            content: Text(content),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop(null);
-                  if (doublePop) {
-                    Navigator.of(context).pop(null);
-                  }
-                },
-                child: Text(tr('ok')),
-              ),
-            ],
-          ),
-        ),
-      );
+    if (payload?.isNotEmpty != true) {
+      return;
     }
+    if (payload!.startsWith(appIdTapPayloadPrefix)) {
+      final appId = payload.substring(appIdTapPayloadPrefix.length);
+      final navigator = appNavigatorKey.currentState;
+      if (navigator != null && appId.isNotEmpty) {
+        NavHelper.pushAppPage(navigator.context, appId);
+      }
+      return;
+    }
+    final lines = payload.split('\n');
+    final title = lines.first;
+    final content = lines.sublist(1).join('\n');
+    appNavigatorKey.currentState?.push(
+      PageRouteBuilder(
+        pageBuilder: (context, _, _) => AlertDialog(
+          title: Text(title),
+          content: Text(content),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(null);
+                if (doublePop) {
+                  Navigator.of(context).pop(null);
+                }
+              },
+              child: Text(tr('ok')),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> cancel(int id) async {
@@ -441,7 +468,9 @@ class NotificationsProvider {
     cancelExisting: cancelExisting,
     onlyAlertOnce: notif.onlyAlertOnce,
     progPercent: notif.progPercent,
-    payload: notif.payload,
+    payload: notif.appId != null
+        ? '$appIdTapPayloadPrefix${notif.appId}'
+        : notif.payload,
     androidActions: notif.androidActions,
   );
 }

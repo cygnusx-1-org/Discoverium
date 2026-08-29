@@ -26,6 +26,11 @@ extension AppsProviderImportExport on AppsProvider {
   }) {
     final appList = apps.values
         .where((e) => appIds == null || appIds.contains(e.app.id))
+        .where(
+          (e) =>
+              !settingsProvider.exportInstalledOnly ||
+              e.app.installedVersion != null,
+        )
         .map((e) => e.app.toJson())
         .toList();
     int shouldExportSettings = settingsProvider.exportSettings;
@@ -62,6 +67,8 @@ extension AppsProviderImportExport on AppsProvider {
     SettingsProvider? sp,
   }) async {
     final SettingsProvider settingsProvider = sp ?? this.settingsProvider;
+    final customName = settingsProvider.autoExportFileName;
+    final hasCustomName = customName != null && customName.isNotEmpty;
     var exportDir = await settingsProvider.getExportDir();
     if (isAuto) {
       if (!settingsProvider.autoExportOnChanges) {
@@ -72,7 +79,11 @@ extension AppsProviderImportExport on AppsProvider {
       }
       final files = await saf
           .listFiles(exportDir, columns: [saf.DocumentFileColumn.id])
-          .where((f) => f.uri.pathSegments.last.endsWith('-auto.json'))
+          .where((f) {
+            final name = f.uri.pathSegments.last;
+            return name.endsWith('-auto.json') ||
+                (hasCustomName && name == '$customName.json');
+          })
           .toList();
       if (files.isNotEmpty) {
         for (var f in files) {
@@ -91,10 +102,14 @@ extension AppsProviderImportExport on AppsProvider {
     if (!pickOnly) {
       const encoder = JsonEncoder.withIndent('    ');
       final Map<String, dynamic> finalExport = generateExportJSON();
+      // In auto mode a custom name gives a fixed file that's overwritten each
+      // time, instead of a new timestamped file per change.
+      final displayName = (isAuto && hasCustomName)
+          ? '$customName.json'
+          : '${tr('obtainiumExportHyphenatedLowercase')}-${DateTime.now().toIso8601String().replaceAll(':', '-')}${isAuto ? '-auto' : ''}.json';
       final result = await saf.createFile(
         exportDir,
-        displayName:
-            '${tr('obtainiumExportHyphenatedLowercase')}-${DateTime.now().toIso8601String().replaceAll(':', '-')}${isAuto ? '-auto' : ''}.json',
+        displayName: displayName,
         mimeType: 'application/json',
         bytes: Uint8List.fromList(utf8.encode(encoder.convert(finalExport))),
       );

@@ -1,21 +1,24 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:markdown/markdown.dart' as md;
+import 'package:obtainium/app_sources/github.dart';
 import 'package:obtainium/components/app_list_tile.dart';
 import 'package:obtainium/components/category_editor.dart';
 import 'package:obtainium/components/generated_form_renderer.dart';
 import 'package:obtainium/components/ui_widgets.dart';
 import 'package:obtainium/components/app_detail_widgets.dart';
+import 'package:obtainium/theme.dart';
 import 'package:obtainium/providers/apps_provider.dart';
+import 'package:obtainium/utils/format_utils.dart';
 import 'package:obtainium/providers/notifications_provider.dart';
-import 'package:obtainium/providers/logs_provider.dart';
+import 'package:obtainium/core/logging/app_logger.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:obtainium/custom_errors.dart';
+import 'package:obtainium/utils/locale_utils.dart';
 import 'package:obtainium/main.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:provider/provider.dart';
@@ -60,6 +63,19 @@ class _AppPageState extends State<AppPage> {
   int? _appCacheSig;
   AppInMemory? _appCache;
 
+  /// How long the page waits for release notes it has to fetch before giving
+  /// up and drawing without them. The page is held back until this resolves,
+  /// so it must not be able to hang.
+  static const Duration _releaseNotesTimeout = Duration(seconds: 15);
+
+  /// Release notes for the sections below the app details, resolved in full
+  /// before any of them is drawn. Null means not resolved yet, and nothing is
+  /// drawn at all: filling the cards in afterwards makes them change height
+  /// under the reader.
+  List<_ReleaseNotesSection>? _releaseNotes;
+  String? _releaseNotesKey;
+  String? _releaseNotesAppId;
+
   // Best-effort download-size probe for the currently-selected APK URL.
   String? _sizeProbeKey;
   int? _probedDownloadSize;
@@ -97,13 +113,14 @@ class _AppPageState extends State<AppPage> {
           resolvedUrl,
           headers: headers,
           allowInsecure: app.app.settings.getBool('allowInsecure'),
+          enableCertificatePinning: settingsProvider.enableCertificatePinning,
         );
         if (mounted && _sizeProbeKey == key && size != null) {
           setState(() => _probedDownloadSize = size);
         }
       } catch (e) {
         // Best-effort only: leave the size unknown when it can't be resolved.
-        unawaited(LogsProvider().add('Size probe failed for $url: $e'));
+        AppLogger.info('Size probe failed for $url: $e');
       }
     }();
   }
@@ -127,6 +144,8 @@ class _AppPageState extends State<AppPage> {
     // UI updates until the WebView has finished loading to avoid
     // predictive-back crashes.
     if (_initialized && oldWidget.appId != widget.appId) {
+      prevApp = null;
+      webViewLoaded = false;
       _pendingAppIdChange = true;
       if (webViewReady) {
         _pendingAppIdChange = false;
@@ -142,6 +161,7 @@ class _AppPageState extends State<AppPage> {
   }
 
   void onWebViewLoaded() {
+    if (!mounted) return;
     _webViewReady = true;
     if (_pendingAppIdChange) {
       _pendingAppIdChange = false;
@@ -169,7 +189,7 @@ class _AppPageState extends State<AppPage> {
               onWebViewLoaded();
             },
             onWebResourceError: (WebResourceError error) {
-              if (error.isForMainFrame == true) {
+              if (error.isForMainFrame == true && mounted) {
                 setState(() {
                   _webViewError = error.description;
                 });
@@ -215,7 +235,7 @@ class _AppPageState extends State<AppPage> {
       app.apkUrls.length,
       app.otherAssetUrls.length,
       app.preferredApkIndex,
-      jsonEncode(app.additionalSettings),
+      identityHashCode(app.additionalSettings),
     ]);
   }
 
@@ -359,7 +379,8 @@ class _AppPageState extends State<AppPage> {
     if (app != null && values != null) {
       final s = source;
       final Map<String, dynamic> originalSettings = app.app.additionalSettings;
-      app.app = app.app.copyWith(additionalSettings: values);
+      final savedValues = Map<String, dynamic>.from(values);
+      app.app = app.app.copyWith(additionalSettings: savedValues);
       if (s?.enforceTrackOnly == true) {
         app.app = app.app.copyWith(
           additionalSettings: Map<String, dynamic>.from(
@@ -386,7 +407,8 @@ class _AppPageState extends State<AppPage> {
           // latest release has no update, and rewriting latestVersion to an
           // epoch below would otherwise strand it showing a phantom one.
           final bool isUpdated =
-              app.app.installedVersion != null && !appHasUpdate(app.app);
+              app.app.installedVersion != null &&
+              !appHasOfferableUpdate(app.app, context.read<SettingsProvider>());
           app.app = app.app.copyWith(
             latestVersion: app.app.releaseDate!.microsecondsSinceEpoch
                 .toString(),
@@ -572,9 +594,13 @@ class _AppPageState extends State<AppPage> {
                 : tr('markUpdated'),
           ),
           if (_probedDownloadSize != null)
-            Text(
-              formatBytes(_probedDownloadSize!),
-              style: const TextStyle(fontSize: 12),
+            Builder(
+              builder: (context) => Text(
+                formatBytes(_probedDownloadSize!),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: DefaultTextStyle.of(context).style.color,
+                ),
+              ),
             ),
         ],
       ),
@@ -633,7 +659,7 @@ class _AppPageState extends State<AppPage> {
           tooltip: tr('more'),
         ),
       if (app != null &&
-          appHasUpdate(app.app) &&
+          appHasOfferableUpdate(app.app, context.read<SettingsProvider>()) &&
           !isVersionDetectionStandard &&
           !trackOnly)
         IconButton(
@@ -650,6 +676,7 @@ class _AppPageState extends State<AppPage> {
           onPressed: updating
               ? null
               : () {
+                  settingsProvider.selectionClick();
                   resetInstallStatus(app);
                 },
           icon: const Icon(Icons.restore_rounded),
@@ -679,11 +706,11 @@ class _AppPageState extends State<AppPage> {
   }) {
     return SliverToBoxAdapter(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+        padding: AppPaddings.page,
         child: ConnectedCard(
           isFirst: isFirst,
           isLast: isLast,
-          padding: padding ?? const EdgeInsets.all(16),
+          padding: padding ?? AppPaddings.cardInner,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -735,10 +762,10 @@ class _AppPageState extends State<AppPage> {
     final appId = app!.app.id;
     final pendingUrl = app.app.pendingRepoRenameUrl!;
     return [
-      const SliverToBoxAdapter(child: SizedBox(height: 20)),
+      const SliverToBoxAdapter(child: SizedBox(height: AppSpacings.sectionGap)),
       SliverToBoxAdapter(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+          padding: AppPaddings.page,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             spacing: 3,
@@ -849,11 +876,11 @@ class _AppPageState extends State<AppPage> {
   }
 
   List<Widget> _buildVersionInfoSections(AppInMemory? app) {
+    final settingsProvider = context.read<SettingsProvider>();
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final trackOnly = app?.app.settings.getBool('trackOnly') == true;
     final pseudo = app?.app != null && isVersionPseudo(app!.app);
-    final realVersion = app?.installedInfo?.versionName;
     final apkCount = app?.app.apkUrls.length ?? 0;
     final changeLogFn = app != null ? getChangeLogFn(context, app.app) : null;
     return [
@@ -862,15 +889,12 @@ class _AppPageState extends State<AppPage> {
         false,
         children: [
           if (trackOnly) _detailNote(tr('xIsTrackOnly', args: [tr('app')])),
-          if (pseudo)
-            _detailNote(
-              realVersion != null
-                  ? '${tr('pseudoVersionInUse')} (OS installed $realVersion)'
-                  : tr('pseudoVersionInUse'),
-            ),
+          if (pseudo) _detailNote(tr('pseudoVersionInUse')),
           () {
-            String l = appInstalledVersionText(app?.app);
-            final upToDate = app == null || !appHasUpdate(app.app);
+            String l = appInstalledVersionText(app?.app, settingsProvider);
+            final upToDate =
+                app == null ||
+                !appHasOfferableUpdate(app.app, settingsProvider);
             if (!upToDate) {
               l += '\n${app.app.latestVersion} ${tr('latest')}';
             }
@@ -948,13 +972,250 @@ class _AppPageState extends State<AppPage> {
     );
   }
 
+  /// GitHub's release notes for the installed version paired with its
+  /// neighbour: the update ahead of it when one is pending, otherwise the
+  /// release before it.
+  ///
+  /// The app record only carries the notes of the release the source last
+  /// selected, so the other section is fetched. Only GitHub is handled: it is
+  /// the source whose notes are structured markdown.
+  List<Widget> _buildReleaseNotesSections(
+    AppInMemory? app,
+    SettingsProvider settingsProvider,
+  ) {
+    final installed = app?.app.installedVersion;
+    if (app == null || installed == null) return const [];
+    final source = SourceProvider().getSource(
+      app.app.url,
+      overrideSource: app.app.overrideSource,
+    );
+    if (source is! GitHub) return const [];
+    // The same question the version row above asks, so the two never disagree:
+    // a latest that differs from the installed version is not an update when
+    // it is older and downgrades are hidden.
+    final hasNext = appHasOfferableUpdate(app.app, settingsProvider);
+    _ensureReleaseNotes(app.app, source, installed, hasNext);
+    final sections = _releaseNotes;
+    if (sections == null) return const [];
+    return [
+      const SliverToBoxAdapter(child: SizedBox(height: AppSpacings.sectionGap)),
+      for (var i = 0; i < sections.length; i++)
+        _buildSection(
+          i == 0,
+          i == sections.length - 1,
+          children: [
+            _releaseNotesHeader(context, sections[i].label),
+            sections[i].notes == null
+                ? _releaseNotesPlaceholder(context, sections[i].placeholder)
+                : _releaseNotesMarkdown(context, sections[i].notes!, app.app),
+          ],
+        ),
+    ];
+  }
+
+  /// Whether the release-notes sections are ready to be drawn, starting their
+  /// lookup if it has not begun. False only before the first resolution for
+  /// this page: a later reload keeps the notes already on screen, so a routine
+  /// update check cannot blank the page out from under the reader.
+  bool _releaseNotesReady(AppInMemory? app, SettingsProvider settingsProvider) {
+    final installed = app?.app.installedVersion;
+    if (app == null || installed == null) return true;
+    final source = SourceProvider().getSource(
+      app.app.url,
+      overrideSource: app.app.overrideSource,
+    );
+    if (source is! GitHub) return true;
+    _ensureReleaseNotes(
+      app.app,
+      source,
+      installed,
+      appHasOfferableUpdate(app.app, settingsProvider),
+    );
+    return _releaseNotes != null;
+  }
+
+  /// Resolves the release notes for [app] if that has not been done for these
+  /// versions yet. Everything the update check already cached is used as-is,
+  /// which is the usual case and costs nothing; anything missing is fetched,
+  /// and until it arrives the page holds off drawing.
+  void _ensureReleaseNotes(
+    App app,
+    GitHub source,
+    String installed,
+    bool hasNext,
+  ) {
+    final key = '${app.id}|$installed|${app.latestVersion}|$hasNext';
+    if (key == _releaseNotesKey) return;
+    // Notes belonging to a different app must never stay on screen, so this
+    // page waits again when it is pointed at another app. Only a version
+    // change within the same app keeps what is already drawn.
+    if (_releaseNotesAppId != app.id) _releaseNotes = null;
+    _releaseNotesAppId = app.id;
+    _releaseNotesKey = key;
+    final cached = _cachedReleaseNotes(app, installed, hasNext);
+    if (cached != null) {
+      // Assigning during build is safe and deliberate: this same build then
+      // renders the sections, so a fully cached app never waits a frame.
+      _releaseNotes = cached;
+      return;
+    }
+    unawaited(_loadReleaseNotes(key, app, source, installed, hasNext));
+  }
+
+  /// Both sections built purely from what the update check stored, or null
+  /// when any part of it is missing.
+  List<_ReleaseNotesSection>? _cachedReleaseNotes(
+    App app,
+    String installed,
+    bool hasNext,
+  ) {
+    final cache = app.recentReleases;
+    if (cache.isEmpty) return null;
+    final latest = app.latestVersion;
+    ReleaseNotes? entryFor(String version) {
+      for (final entry in cache) {
+        if (entry.version == version) return entry;
+      }
+      return null;
+    }
+
+    _ReleaseNotesSection sectionFor(String label, ReleaseNotes entry) =>
+        _ReleaseNotesSection(
+          label: '$label - ${entry.version}',
+          notes: entry.notes == null
+              ? null
+              : GitHub.linkIssueReferences(entry.notes!, app.url),
+          placeholder: tr('noReleaseNotes'),
+        );
+
+    final installedEntry = entryFor(installed);
+    if (installedEntry == null) return null;
+    if (hasNext) {
+      final latestEntry = entryFor(latest);
+      if (latestEntry == null) return null;
+      return [
+        sectionFor(tr('releaseNotesForNextVersion'), latestEntry),
+        sectionFor(tr('releaseNotes'), installedEntry),
+      ];
+    }
+    final index = cache.indexOf(installedEntry);
+    // The release before the installed one is the next entry down. The last
+    // cached entry has no known successor, so that case is not cached.
+    if (index + 1 >= cache.length) return null;
+    return [
+      sectionFor(tr('releaseNotes'), installedEntry),
+      sectionFor(tr('releaseNotesForPreviousVersion'), cache[index + 1]),
+    ];
+  }
+
+  Future<void> _loadReleaseNotes(
+    String key,
+    App app,
+    GitHub source,
+    String installed,
+    bool hasNext,
+  ) async {
+    final latest = app.latestVersion;
+    // The stored changelog belongs to the latest release, so it describes the
+    // installed version only when the two are literally the same release.
+    final changeLog = app.changeLog?.trim();
+    final storedNotes = changeLog == null || changeLog.isEmpty
+        ? null
+        : GitHub.linkIssueReferences(changeLog, app.url);
+    final sections = <_ReleaseNotesSection>[];
+
+    Future<_ReleaseNotesSection> notesFor(String label, String version) async {
+      try {
+        final notes = await source
+            .getReleaseNotesForVersion(app.url, app.additionalSettings, version)
+            .timeout(_releaseNotesTimeout);
+        return _ReleaseNotesSection(
+          label: '$label - $version',
+          notes: notes == null
+              ? null
+              : GitHub.linkIssueReferences(notes, app.url),
+          placeholder: tr('noReleaseNotes'),
+        );
+      } catch (e) {
+        return _ReleaseNotesSection(
+          label: '$label - $version',
+          notes: null,
+          placeholder: tr('releaseNotesLoadFailed'),
+        );
+      }
+    }
+
+    if (hasNext) {
+      sections.add(
+        _ReleaseNotesSection(
+          label: '${tr('releaseNotesForNextVersion')} - $latest',
+          notes: storedNotes,
+          placeholder: tr('noReleaseNotes'),
+        ),
+      );
+      sections.add(await notesFor(tr('releaseNotes'), installed));
+    } else if (latest == installed) {
+      sections.add(
+        _ReleaseNotesSection(
+          label: '${tr('releaseNotes')} - $installed',
+          notes: storedNotes,
+          placeholder: tr('noReleaseNotes'),
+        ),
+      );
+      sections.add(await _previousSection(app, source, installed));
+    } else {
+      // Nothing to offer, but the latest release is not the installed one
+      // either (a downgrade the app is hiding), so the changelog on hand
+      // describes neither section.
+      sections.add(await notesFor(tr('releaseNotes'), installed));
+      sections.add(await _previousSection(app, source, installed));
+    }
+
+    if (!mounted || key != _releaseNotesKey) return;
+    setState(() => _releaseNotes = sections);
+  }
+
+  Future<_ReleaseNotesSection> _previousSection(
+    App app,
+    GitHub source,
+    String installed,
+  ) async {
+    final label = tr('releaseNotesForPreviousVersion');
+    try {
+      final previous = await source
+          .getPreviousRelease(app.url, app.additionalSettings, installed)
+          .timeout(_releaseNotesTimeout);
+      if (previous == null) {
+        return _ReleaseNotesSection(
+          label: label,
+          notes: null,
+          placeholder: tr('noPreviousRelease'),
+        );
+      }
+      final notes = previous.notes;
+      return _ReleaseNotesSection(
+        label: '$label - ${previous.version}',
+        notes: notes == null
+            ? null
+            : GitHub.linkIssueReferences(notes, app.url),
+        placeholder: tr('noReleaseNotes'),
+      );
+    } catch (e) {
+      return _ReleaseNotesSection(
+        label: label,
+        notes: null,
+        placeholder: tr('releaseNotesLoadFailed'),
+      );
+    }
+  }
+
   /// Renders the source-provided "about" markdown, when present, as its own
   /// section so it fits the sectioned detail layout.
   List<Widget> _buildAboutSection(AppInMemory? app) {
     final about = app?.app.additionalSettings['about'];
     if (about is! String || about.isEmpty) return const [];
     return [
-      const SliverToBoxAdapter(child: SizedBox(height: 20)),
+      const SliverToBoxAdapter(child: SizedBox(height: AppSpacings.sectionGap)),
       _buildSection(
         true,
         true,
@@ -993,6 +1254,7 @@ class _AppPageState extends State<AppPage> {
     bool certs,
     bool hasAssets,
   ) {
+    final theme = Theme.of(context);
     final widgets = <Widget>[
       _buildSection(
         true,
@@ -1014,8 +1276,8 @@ class _AppPageState extends State<AppPage> {
           const SizedBox(height: 4),
           Text(
             app?.app.id ?? '',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
         ],
@@ -1032,8 +1294,8 @@ class _AppPageState extends State<AppPage> {
             Text(
               '${plural('certificateHash', a.certificateHashes.length)}'
               '${a.hasMultipleSigners ? " (${tr('multipleSigners')})" : ""}',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
             ...a.certificateHashes.map(
@@ -1045,10 +1307,7 @@ class _AppPageState extends State<AppPage> {
                   },
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Text(
-                      h,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
+                    child: Text(h, style: theme.textTheme.bodySmall),
                   ),
                 ),
               ),
@@ -1211,7 +1470,7 @@ class _AppPageState extends State<AppPage> {
     final bool areDownloadsRunning = context.select<AppsProvider, bool>(
       (p) => p.areDownloadsRunning(),
     );
-    context.select<AppsProvider, double?>(
+    final _ = context.select<AppsProvider, double?>(
       (p) => p.apps[widget.appId]?.downloadProgress,
     );
 
@@ -1248,6 +1507,12 @@ class _AppPageState extends State<AppPage> {
         app?.app.apkUrls.isNotEmpty == true ||
         app?.app.otherAssetUrls.isNotEmpty == true;
 
+    // The release notes are part of this page's first paint rather than
+    // something that appears in it later, so the page waits for them. Notes
+    // the update check already cached resolve without any wait at all; only a
+    // fetch holds the page, and never past [_releaseNotesTimeout].
+    final waitingForReleaseNotes = !_releaseNotesReady(app, settingsProvider);
+
     return Scaffold(
       appBar: showAppWebpageFinal ? _appScreenAppBar() : null,
       floatingActionButton: showAppWebpageFinal
@@ -1272,6 +1537,8 @@ class _AppPageState extends State<AppPage> {
       backgroundColor: Theme.of(context).colorScheme.surface,
       body: showAppWebpageFinal
           ? _getAppWebView(context, app)
+          : waitingForReleaseNotes
+          ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
                 Expanded(
@@ -1290,9 +1557,13 @@ class _AppPageState extends State<AppPage> {
                         ),
                         _buildHeaderSection(app),
                         ..._buildRepoRenameSection(app, appsProvider),
-                        const SliverToBoxAdapter(child: SizedBox(height: 20)),
+                        const SliverToBoxAdapter(
+                          child: SizedBox(height: AppSpacings.sectionGap),
+                        ),
                         ..._buildVersionInfoSections(app),
-                        const SliverToBoxAdapter(child: SizedBox(height: 20)),
+                        const SliverToBoxAdapter(
+                          child: SizedBox(height: AppSpacings.sectionGap),
+                        ),
                         ..._buildSourceInfoSections(
                           app,
                           appsProvider,
@@ -1300,8 +1571,11 @@ class _AppPageState extends State<AppPage> {
                           certs,
                           hasAssets,
                         ),
-                        const SliverToBoxAdapter(child: SizedBox(height: 20)),
+                        const SliverToBoxAdapter(
+                          child: SizedBox(height: AppSpacings.sectionGap),
+                        ),
                         _buildCategorySection(app, appsProvider),
+                        ..._buildReleaseNotesSections(app, settingsProvider),
                         ..._buildAboutSection(app),
                         const SliverToBoxAdapter(child: SizedBox(height: 32)),
                       ],
@@ -1336,4 +1610,62 @@ class _AppPageState extends State<AppPage> {
             ),
     );
   }
+}
+
+/// The heading each release-notes section carries, so the two sections label
+/// themselves identically.
+Widget _releaseNotesHeader(BuildContext context, String text) => Padding(
+  padding: const EdgeInsets.only(bottom: 8),
+  child: Text(
+    text,
+    style: Theme.of(
+      context,
+    ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+  ),
+);
+
+/// Release notes rendered as markdown. Shared so both sections render the same
+/// markdown the same way; [app] supplies the base for relative links.
+Widget _releaseNotesMarkdown(BuildContext context, String notes, App app) =>
+    MarkdownBody(
+      data: notes,
+      styleSheet: MarkdownStyleSheet(
+        blockquoteDecoration: BoxDecoration(color: Theme.of(context).cardColor),
+      ),
+      onTapLink: (text, href, title) {
+        if (href == null) return;
+        unawaited(
+          launchUrlString(
+            href.startsWith('http://') || href.startsWith('https://')
+                ? href
+                : '${Uri.parse(app.url).origin}/$href',
+            mode: LaunchMode.externalApplication,
+          ),
+        );
+      },
+      extensionSet: md.ExtensionSet(
+        md.ExtensionSet.gitHubFlavored.blockSyntaxes,
+        [md.EmojiSyntax(), ...md.ExtensionSet.gitHubFlavored.inlineSyntaxes],
+      ),
+    );
+
+Widget _releaseNotesPlaceholder(BuildContext context, String text) => Text(
+  text,
+  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+    color: Theme.of(context).colorScheme.onSurfaceVariant,
+  ),
+);
+
+/// One rendered release-notes card: its heading, the markdown to show, and the
+/// line to show instead when there is no markdown.
+class _ReleaseNotesSection {
+  final String label;
+  final String? notes;
+  final String placeholder;
+
+  const _ReleaseNotesSection({
+    required this.label,
+    required this.notes,
+    required this.placeholder,
+  });
 }
