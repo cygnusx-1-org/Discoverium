@@ -129,6 +129,7 @@
   "copiedToClipboard": "Copied to clipboard",
   "copyToClipboard": "Copy to clipboard",
   "couldNotGetIdFromApk": "Could not get ID from APK",
+  "couldNotSaveDownloadedFile": "Could not save the downloaded file as \"{}\" - an existing file with that name could not be replaced. Delete or move it, then try again.",
   "crowdsourcedConfigsLabel": "Crowdsourced app configurations (use at your own risk)",
   "crowdsourcedConfigsShort": "Crowdsourced app configurations",
   "cscCode": "CSC code",

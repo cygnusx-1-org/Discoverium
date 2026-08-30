@@ -52,6 +52,10 @@ const int _bgUpdateMaxAttempts = 4;
 const int _bgUpdateMaxRetryWaitSeconds = 30;
 const int _bgClientExceptionRetryWaitSeconds = 15 * 60;
 
+/// How many `name (n).ext` variants to try when a finished download cannot be
+/// moved onto its intended path.
+const int _maxUniqueFileNameAttempts = 50;
+
 final packageManager = AndroidPackageManager();
 final packageInfoFlags = PackageInfoFlags({PMFlag.getSigningCertificates});
 
@@ -366,6 +370,93 @@ Future<File?> _waitForConcurrentDownload(
   return null;
 }
 
+/// Returns [path] with ` (n)` inserted before its extension, the way a browser
+/// disambiguates a download: `/dir/foo.apk` with [n] of 2 becomes
+/// `/dir/foo (2).apk`. A name with no extension - or one that is only a leading
+/// dot, which marks a hidden file rather than an extension - gets the suffix
+/// appended to the whole name.
+String pathWithNumberSuffix(String path, int n) {
+  final lastSlash = path.lastIndexOf('/');
+  final dir = path.substring(0, lastSlash + 1);
+  final name = path.substring(lastSlash + 1);
+  final lastDot = name.lastIndexOf('.');
+  if (lastDot <= 0) {
+    return '$dir$name ($n)';
+  }
+  return '$dir${name.substring(0, lastDot)} ($n)${name.substring(lastDot)}';
+}
+
+/// Moves a finished `.part` file onto [downloadedFile], falling back to a free
+/// `name (n).ext` variant when the destination cannot be taken over.
+///
+/// Under scoped storage a file another app created in the shared Download
+/// folder can be neither renamed over nor deleted - both fail with EPERM - so
+/// the only alternative to a numbered name is discarding a completed download
+/// and leaving the `.part` file behind (#2).
+File _moveDownloadIntoPlace(File tempDownloadedFile, File downloadedFile) {
+  Object? lastError;
+
+  // Takes over [dest] if this app is allowed to. A rename replaces a file this
+  // app owns, and where the filesystem refuses to rename onto an existing name,
+  // deleting first frees it. Both are refused for a file another app created,
+  // which is the case the numbered fallback below exists for.
+  bool moveTo(File dest) {
+    final Object refusal;
+    try {
+      tempDownloadedFile.renameSync(dest.path);
+      return true;
+    } on FileSystemException catch (renameErr) {
+      // The temp file vanishing mid-move is a race with another download or
+      // with the stale-part cleanup, not a name conflict - let the caller
+      // handle it.
+      if (!tempDownloadedFile.existsSync()) rethrow;
+      refusal = renameErr;
+      lastError = renameErr;
+    }
+    try {
+      dest.deleteSync();
+      tempDownloadedFile.renameSync(dest.path);
+      return true;
+    } on FileSystemException catch (deleteErr) {
+      if (!tempDownloadedFile.existsSync()) rethrow;
+      // Keep the rename refusal: it carries the reason (EPERM on a file
+      // another app owns), while the delete that follows it reports only that
+      // scoped storage hides the file from this app entirely (ENOENT).
+      lastError = '$refusal / $deleteErr';
+      return false;
+    }
+  }
+
+  if (moveTo(downloadedFile)) {
+    return downloadedFile;
+  }
+  for (var n = 1; n <= _maxUniqueFileNameAttempts; n++) {
+    // Reusing a variant this app owns keeps repeated downloads on one name
+    // instead of piling up numbers; only a name another app holds pushes n on.
+    final candidate = File(pathWithNumberSuffix(downloadedFile.path, n));
+    if (moveTo(candidate)) {
+      AppLogger.warn(
+        'Could not save the download as ${downloadedFile.path} ($lastError) - saved it as ${candidate.path} instead',
+      );
+      return candidate;
+    }
+  }
+  AppLogger.warn(
+    'Could not save the download to ${downloadedFile.path}: $lastError',
+  );
+  try {
+    tempDownloadedFile.deleteSync();
+  } catch (_) {
+    // Best effort - the error thrown below is what matters to the user.
+  }
+  throw ObtainiumError(
+    tr(
+      'couldNotSaveDownloadedFile',
+      args: [downloadedFile.path.split('/').last],
+    ),
+  );
+}
+
 /// Downloads a file to [destDir] with progress reporting, resuming partial downloads when supported.
 Future<File> downloadFile(
   String fileName,
@@ -595,22 +686,7 @@ Future<File> downloadFile(
     }
     try {
       if (tempDownloadedFile.existsSync()) {
-        if (downloadedFile.existsSync()) {
-          try {
-            tempDownloadedFile.renameSync(downloadedFile.path);
-          } catch (firstErr) {
-            try {
-              downloadedFile.deleteSync();
-              tempDownloadedFile.renameSync(downloadedFile.path);
-            } catch (secondErr) {
-              AppLogger.warn(
-                'Rename of temp download failed: $firstErr / $secondErr. Temp file left at ${tempDownloadedFile.path}',
-              );
-            }
-          }
-        } else {
-          tempDownloadedFile.renameSync(downloadedFile.path);
-        }
+        return _moveDownloadIntoPlace(tempDownloadedFile, downloadedFile);
       }
     } on FileSystemException {
       // File disappeared between existence check and operation.

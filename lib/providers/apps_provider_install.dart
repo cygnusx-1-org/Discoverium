@@ -1469,7 +1469,7 @@ extension AppsProviderInstall on AppsProvider {
         enableCertificatePinning;
     try {
       final String downloadPath = '${await getStorageRootPath()}/Download';
-      await downloadFile(
+      final File savedFile = await downloadFile(
         fileUrl.key,
         true,
         (double? progress, [int? received, int? total]) {
@@ -1497,7 +1497,9 @@ extension AppsProviderInstall on AppsProvider {
       );
       unawaited(
         notificationsProvider.notify(
-          DownloadedNotification(fileUrl.key, fileUrl.value),
+          // Name the file that actually landed: a destination this app may not
+          // overwrite makes the download fall back to a `name (n).ext` variant.
+          DownloadedNotification(savedFile.path.split('/').last, fileUrl.value),
         ),
       );
       downloadedIds.add(fileUrl.key);
