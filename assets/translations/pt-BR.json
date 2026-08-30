@@ -205,6 +205,7 @@
     "other": "{} horas"
   },
   "huaweiAppGallery": "Huawei AppGallery",
+  "huaweiAppGalleryApiError": "Could not get app details from the Huawei AppGallery API",
   "import": "Importar",
   "importErrors": "Erros de importação",
   "importExport": "Importar/Exportar",
@@ -221,6 +222,7 @@
   "includeZips": "Incluir arquivos ZIP",
   "insecureRedirect": "Refused to follow a redirect from HTTPS to insecure HTTP",
   "install": "Instalar",
+  "installConfirmationError": "Install confirmation was not received in time — the app may not have been installed",
   "installMethod": "Método de instalação",
   "installMethodExternal": "App externo",
   "installMethodShizuku": "Shizuku",

@@ -205,6 +205,7 @@
     "other": "{} sat/i"
   },
   "huaweiAppGallery": "Huawei AppGallery",
+  "huaweiAppGalleryApiError": "Could not get app details from the Huawei AppGallery API",
   "import": "Import",
   "importErrors": "Uvezi greške",
   "importExport": "Uvoz/izvoz",
@@ -221,6 +222,7 @@
   "includeZips": "Uključi i ZIP datoteke",
   "insecureRedirect": "Refused to follow a redirect from HTTPS to insecure HTTP",
   "install": "Instaliraj",
+  "installConfirmationError": "Install confirmation was not received in time — the app may not have been installed",
   "installMethod": "Installation method",
   "installMethodExternal": "External app",
   "installMethodShizuku": "Shizuku",

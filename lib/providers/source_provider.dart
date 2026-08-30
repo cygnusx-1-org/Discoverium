@@ -591,7 +591,7 @@ abstract class AppSource {
     );
   }
 
-  void runOnAddAppInputChange(String inputUrl) {}
+  Map<String, dynamic> runOnAddAppInputChange(String inputUrl) => {};
 
   /// Delegates to [ApkFilterService.apkContainerExtensions].
   static List<String> get apkContainerExtensions =>
@@ -718,14 +718,12 @@ abstract class AppSource {
       ),
     ],
     [
-      GeneratedFormDropdown(
+      GeneratedFormSlider(
         'minimumUpdateAgeDays',
         [
+          const MapEntry('', 'useGlobalDefault'),
           for (final days in minimumUpdateAgeOptions)
-            MapEntry(
-              days == 0 ? '' : days.toString(),
-              days == 0 ? tr('useGlobalDefault') : plural('day', days),
-            ),
+            MapEntry(days.toString(), days == 0 ? 'none' : days.toString()),
         ],
         label: tr('minimumUpdateAgeDays'),
         value: '',
@@ -1138,17 +1136,6 @@ class SourceProvider {
     return source;
   }
 
-  bool ifRequiredAppSpecificSettingsExist(AppSource source) {
-    for (var row in source.combinedAppSpecificSettingFormItems) {
-      for (var element in row) {
-        if (element is GeneratedFormTextField && element.required) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
   String generateTempID(
     String standardUrl,
     Map<String, dynamic> additionalSettings,
@@ -1403,6 +1390,11 @@ class HttpService {
       'assets/ca-certs/sectigo-pub-serv-auth-r46.crt',
       'assets/ca-certs/sectigo-pub-serv-auth-e46.crt',
     ]),
+    'rustore.ru': _loadCertificateFromAsset([
+      'assets/ca-certs/harica-tls-root-2021-rsa.crt',
+      'assets/ca-certs/harica-tls-root-2021-ecc.crt',
+      'assets/ca-certs/russian-mintsifry-root.crt',
+    ]),
   };
 
   static Future<List<Uint8List>> _loadCertificateFromAsset(
@@ -1416,11 +1408,24 @@ class HttpService {
     return certsBytes;
   }
 
+  static String _extractRootHost(String host) {
+    final parts = host.split('.');
+    return parts.length > 2 ? parts.sublist(parts.length - 2).join('.') : host;
+  }
+
   Future<SecurityContext?> _createCertPinning(String url) async {
     final uri = Uri.parse(url);
     final host = uri.host;
+    final rootHost = _extractRootHost(host);
     if (_certificatePins.containsKey(host)) {
       final certsBytes = await _certificatePins[host]!;
+      final securityContext = SecurityContext();
+      for (final certBytes in certsBytes) {
+        securityContext.setTrustedCertificatesBytes(certBytes);
+      }
+      return securityContext;
+    } else if (_certificatePins.containsKey(rootHost)) {
+      final certsBytes = await _certificatePins[rootHost]!;
       final securityContext = SecurityContext();
       for (final certBytes in certsBytes) {
         securityContext.setTrustedCertificatesBytes(certBytes);
@@ -1431,6 +1436,20 @@ class HttpService {
     }
   }
 
+  /* Basically RuStore switched partially (and in the future it may be fully)
+     to russian government Mintsifry CA, which isnt trusted by Android nor
+     Chrome Root Store. This is workaround to trust Mintsifry CA for network
+     requests made to RuStore domains and subdomains
+   */
+  Future<SecurityContext> _ruStoreWorkaroundSecurityContext() async {
+    final securityContext = SecurityContext(withTrustedRoots: true);
+    final cert = await rootBundle.load(
+      'assets/ca-certs/russian-mintsifry-root.crt',
+    );
+    securityContext.setTrustedCertificatesBytes(cert.buffer.asUint8List());
+    return securityContext;
+  }
+
   Future<HttpClient> createHttpClient(
     Map<String, dynamic> additionalSettings,
   ) async {
@@ -1438,8 +1457,11 @@ class HttpService {
     final url = additionalSettings['url'] as String;
     final pinning = additionalSettings['enableCertificatePinning'] == true;
     SecurityContext? securityContext;
+    final host = Uri.parse(url).host;
     if (pinning) {
       securityContext = await _createCertPinning(url);
+    } else if (_extractRootHost(host) == 'rustore.ru') {
+      securityContext = await _ruStoreWorkaroundSecurityContext();
     }
     final client = securityContext != null
         ? HttpClient(context: securityContext)
@@ -1973,6 +1995,14 @@ class ApkFilterService {
     return apkUrls;
   }
 
+  /// Non-canonical ABI names commonly used in APK filenames, mapped to the
+  /// canonical device ABI strings they correspond to (see #3249).
+  static const Map<String, List<String>> abiNameAliases = {
+    'arm64-v8a': ['aarch64', 'arm64'],
+    'armeabi-v7a': ['armv7', 'armeabi'],
+    'x86_64': ['x64'],
+  };
+
   Future<List<MapEntry<String, String>>> filterApksByArch(
     List<MapEntry<String, String>> apkUrls,
     List<String> abis, {
@@ -1980,7 +2010,11 @@ class ApkFilterService {
   }) async {
     if (apkUrls.length > 1) {
       for (var abi in abis) {
-        final abiRegex = RegExp('.*$abi.*', caseSensitive: false);
+        final variants = [abi, ...?abiNameAliases[abi]];
+        final abiRegex = RegExp(
+          '.*(?:${variants.join('|')}).*',
+          caseSensitive: false,
+        );
         final urls2 = apkUrls
             .where((element) => abiRegex.hasMatch(element.key))
             .toList();
