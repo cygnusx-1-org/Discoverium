@@ -190,6 +190,30 @@ class DiscoveriumRepo {
     return normalized;
   }
 
+  /// Whether [entry] is already in the user's app list.
+  ///
+  /// Matched on the package ID first: [existingIds] are `AppsProvider.apps`
+  /// keys, and an app added from the curated repo takes its ID straight from
+  /// the entry, so this is an exact comparison. The display name deliberately
+  /// plays no part — `saveApps` overwrites a stored app's name with the
+  /// installed package's localized label, so a curated title like
+  /// "Fossify Clock" is held as "Zegar" under a Polish locale (#28).
+  ///
+  /// [existingNormalizedUrls] are the existing apps' URLs run through
+  /// [normalizeUrl], checked second so an entry with no ID, or an app still
+  /// carrying a temporary ID, is still recognized by the URL it came from.
+  static bool isAlreadyAdded(
+    DiscoveriumApp entry,
+    Set<String> existingIds,
+    Set<String> existingNormalizedUrls,
+  ) {
+    final id = entry.id;
+    if (id != null && id.isNotEmpty && existingIds.contains(id)) return true;
+    final releasesUrl = entry.releasesUrl;
+    return releasesUrl != null &&
+        existingNormalizedUrls.contains(normalizeUrl(releasesUrl));
+  }
+
   /// The repo entry whose releases URL matches [standardUrl], if any.
   ///
   /// Never throws — a repo that can't be reached simply yields no metadata so

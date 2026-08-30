@@ -124,33 +124,23 @@ class SearchPageState extends State<SearchPage> {
     final allowCommercial = settings.allowCommercialApps;
     final query = _searchController.text.trim();
 
-    final existing = context.read<AppsProvider>().apps.values.map((a) => a.app);
-    final existingUrls = <String>{};
-    final existingNameAuthors = <String>{};
-    for (final app in existing) {
-      existingUrls.add(DiscoveriumRepo.normalizeUrl(app.url));
-      existingNameAuthors.add(
-        '${app.name.toLowerCase()}|${app.author.toLowerCase()}',
-      );
-    }
-
-    bool alreadyAdded(DiscoveriumApp app) {
-      final releasesUrl = app.releasesUrl;
-      if (releasesUrl != null &&
-          existingUrls.contains(DiscoveriumRepo.normalizeUrl(releasesUrl))) {
-        return true;
-      }
-      final nameAuthor =
-          '${app.name.toLowerCase()}|${(app.author ?? '').toLowerCase()}';
-      return existingNameAuthors.contains(nameAuthor);
-    }
+    final existingApps = context.read<AppsProvider>().apps;
+    final existingIds = existingApps.keys.toSet();
+    final existingUrls = existingApps.values
+        .map((a) => DiscoveriumRepo.normalizeUrl(a.app.url))
+        .toSet();
 
     _filteredApps = _allApps
         .where(
           (app) =>
               (allowUnverified || app.verified) &&
               (allowCommercial || !app.commercial) &&
-              (_addingUrls.contains(app.releasesUrl) || !alreadyAdded(app)) &&
+              (_addingUrls.contains(app.releasesUrl) ||
+                  !DiscoveriumRepo.isAlreadyAdded(
+                    app,
+                    existingIds,
+                    existingUrls,
+                  )) &&
               (query.isEmpty || app.matchesSearch(query)),
         )
         .toList();
