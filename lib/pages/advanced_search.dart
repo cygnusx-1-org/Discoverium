@@ -12,6 +12,88 @@ import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:provider/provider.dart';
 
+/// One `addAppsByURL` call: the URLs to add, and the source to add them under
+/// (null meaning "let host-based detection choose").
+class AddAppsBatch {
+  final AppSource? source;
+  final List<String> urls;
+  const AddAppsBatch(this.source, this.urls);
+}
+
+/// The source to add [url] under, given that [sourceIdentifier] produced it, or
+/// null when plain host-based detection already picks the right source.
+///
+/// Search results don't always live on a host their own source claims — an
+/// F-Droid third-party repo has no hosts at all and is `neverAutoSelect`, so
+/// e.g. an IzzyOnDroid repo result (`apt.izzysoft.de/fdroid/repo?appId=...`)
+/// would be detected as the IzzyOnDroid source and rejected, since that source
+/// only accepts `/fdroid/index/apk/<id>` URLs.
+AppSource? sourceOverrideFor(
+  SourceProvider sourceProvider,
+  String url,
+  String sourceIdentifier,
+) {
+  try {
+    if (sourceProvider.getSource(url).sourceIdentifier == sourceIdentifier) {
+      return null;
+    }
+  } on ObtainiumError {
+    // No source claims this host, so the result's own source must be used.
+  }
+  try {
+    return sourceProvider.getSource(url, overrideSource: sourceIdentifier);
+  } on ObtainiumError {
+    // The URL is unusable (`preStandardizeUrl` rejects it). Leaving it
+    // unoverridden keeps the failure where addAppsByURL can report it against
+    // this one URL, rather than aborting the whole selection here.
+    return null;
+  }
+}
+
+/// Splits [selectedUrls] into the fewest `addAppsByURL` calls that still add
+/// each URL under the source that produced it.
+///
+/// [sourceIdentifiers] maps a URL to that source; URLs it covers are added
+/// under an override whenever host detection would pick a different source.
+/// [sourceOverride] forces one source for every URL instead.
+List<AddAppsBatch> groupUrlsBySource(
+  SourceProvider sourceProvider,
+  List<String> selectedUrls, {
+  AppSource? sourceOverride,
+  Map<String, String> sourceIdentifiers = const {},
+}) {
+  if (selectedUrls.isEmpty) return const [];
+  // A caller-supplied source is already configured for these URLs and applies
+  // to all of them.
+  if (sourceOverride != null) {
+    return [AddAppsBatch(sourceOverride, List.of(selectedUrls))];
+  }
+
+  // Derived overrides are not interchangeable: getSource() rewrites an
+  // overridden source's hosts to the URL's own host, so URLs may only share a
+  // source instance if they share a host too.
+  final batches = <String, List<String>>{};
+  final overrides = <String, AppSource?>{};
+  for (final url in selectedUrls) {
+    AppSource? override;
+    final sourceIdentifier = sourceIdentifiers[url];
+    if (sourceIdentifier != null) {
+      override = sourceOverrideFor(sourceProvider, url, sourceIdentifier);
+    }
+    // The host must come off the same normalized URL getSource() built the
+    // override from; reading it off the raw one reports '' for a schemeless
+    // URL, which would let two hosts share a single override instance.
+    final key = override == null
+        ? ''
+        : '${override.sourceIdentifier}|${Uri.parse(preStandardizeUrl(url)).host}';
+    (batches[key] ??= []).add(url);
+    overrides[key] = override;
+  }
+  return batches.entries
+      .map((e) => AddAppsBatch(overrides[e.key], e.value))
+      .toList();
+}
+
 /// Source-driven search, as opposed to the curated repo browsing on the Search
 /// page: query a single app source, or several at once, and bulk-add results.
 class AdvancedSearchPage extends StatefulWidget {
@@ -38,16 +120,33 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
   };
 
   /// Adds the URLs the user selected, reporting per-URL failures.
+  ///
+  /// [sourceIdentifiers] maps a URL to the source that returned it; URLs it
+  /// covers are added under that source when host detection would pick a
+  /// different one. [sourceOverride] forces one source for every URL instead.
+  /// Both are required so a caller can't silently drop the source a result
+  /// came from — that is exactly how #54 was introduced.
   Future<void> _addSelected(
     List<String> selectedUrls, {
-    AppSource? sourceOverride,
+    required AppSource? sourceOverride,
+    required Map<String, String> sourceIdentifiers,
   }) async {
     if (selectedUrls.isEmpty) return;
     final appsProvider = context.read<AppsProvider>();
-    final errors = await appsProvider.addAppsByURL(
+    final errors = <List<String>>[];
+    for (final batch in groupUrlsBySource(
+      sourceProvider,
       selectedUrls,
       sourceOverride: sourceOverride,
-    );
+      sourceIdentifiers: sourceIdentifiers,
+    )) {
+      errors.addAll(
+        await appsProvider.addAppsByURL(
+          batch.urls,
+          sourceOverride: batch.source,
+        ),
+      );
+    }
     if (!mounted) return;
     if (errors.isEmpty) {
       showMessage(
@@ -172,7 +271,11 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
             ),
           ) ??
           [];
-      await _addSelected(selectedUrls);
+      await _addSelected(
+        selectedUrls,
+        sourceOverride: null,
+        sourceIdentifiers: interleaved.map((k, v) => MapEntry(k, v.key)),
+      );
     } catch (e) {
       if (mounted) showError(e, context);
     } finally {
@@ -259,7 +362,11 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
                 SelectionModal(entries: urlsWithDescriptions),
           ) ??
           [];
-      await _addSelected(selectedUrls, sourceOverride: effectiveSource);
+      await _addSelected(
+        selectedUrls,
+        sourceOverride: effectiveSource,
+        sourceIdentifiers: const {},
+      );
     } catch (e) {
       if (mounted) showError(e, context);
     } finally {

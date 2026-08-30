@@ -31,6 +31,7 @@ import 'package:url_launcher/url_launcher_string.dart';
 /// Which settings screen to render. `null` shows the top-level menu.
 enum SettingsSection {
   about,
+  import,
   export,
   updates,
   repoApps,
@@ -403,6 +404,8 @@ class _SettingsPageState extends State<SettingsPage> {
       switch (section) {
         case SettingsSection.about:
           return _buildAppAboutSection(context);
+        case SettingsSection.import:
+          return const [ImportSection()];
         case SettingsSection.export:
           return const [ExportSection()];
         case SettingsSection.updates:
@@ -465,6 +468,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   String _sectionTitle(SettingsSection section) => switch (section) {
     SettingsSection.about => tr('about'),
+    SettingsSection.import => tr('obtainiumImport'),
     SettingsSection.export => tr('obtainiumExport'),
     SettingsSection.updates => tr('updates'),
     SettingsSection.repoApps => tr('repoApps'),
@@ -475,6 +479,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   IconData _sectionIcon(SettingsSection section) => switch (section) {
     SettingsSection.about => Icons.info_outline,
+    SettingsSection.import => Icons.download_outlined,
     SettingsSection.export => Icons.upload_outlined,
     SettingsSection.updates => Icons.update_outlined,
     SettingsSection.repoApps => Icons.travel_explore_outlined,
@@ -501,10 +506,19 @@ class _SettingsPageState extends State<SettingsPage> {
             (a, b) => _sectionTitle(
               a,
             ).toLowerCase().compareTo(_sectionTitle(b).toLowerCase()),
-          )
-          // About is not a setting, so it sits after the rest rather than
-          // wherever its translated title happens to sort.
-          ..add(SettingsSection.about);
+          );
+    // Import and export are a pair, and sorting them by title splits them in
+    // the wrong order (in English "Discoverium export" sorts ahead of
+    // "Discoverium import"). Anchor the pair where export lands for the active
+    // locale, with import leading it.
+    sections.remove(SettingsSection.import);
+    sections.insert(
+      sections.indexOf(SettingsSection.export),
+      SettingsSection.import,
+    );
+    // About is not a setting, so it sits after the rest rather than wherever
+    // its translated title happens to sort.
+    sections.add(SettingsSection.about);
     return shapeCardTiles([
       for (final s in sections)
         ActionListTile(

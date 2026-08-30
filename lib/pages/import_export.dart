@@ -202,7 +202,7 @@ class _ImportFromURLListPageState extends State<ImportFromURLListPage> {
 }
 
 /// The app-import controls (file import, URL-list import, mass sources).
-/// Embedded in the Settings → Import/Export page.
+/// Embedded in the Settings → Discoverium import page.
 class ImportSection extends StatefulWidget {
   const ImportSection({super.key});
 
@@ -351,7 +351,7 @@ class _ImportSectionState extends State<ImportSection> {
           ),
         ),
         Column(
-          spacing: 2,
+          spacing: 3,
           children: () {
             final tiles = <Widget>[
               ActionListTile(
@@ -392,7 +392,8 @@ class _ImportSectionState extends State<ImportSection> {
 }
 
 /// The app-export controls (export dir picker, export action, auto-export and
-/// settings-inclusion options). Embedded in the Settings → Import/Export page.
+/// settings-inclusion options). Embedded in the Settings → Discoverium export
+/// page.
 class ExportSection extends StatefulWidget {
   const ExportSection({super.key});
 
