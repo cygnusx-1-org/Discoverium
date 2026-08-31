@@ -258,7 +258,7 @@
   "matchGroupToUseForX": "\"{}\" നായി ഉപയോഗിക്കേണ്ട ഗ്രൂപ്പ് മാച്ച് ചെയ്യുക",
   "matchLinksOutsideATags": "Match links outside <a> tags",
   "minStarCount": "കുറഞ്ഞ നക്ഷത്രങ്ങളുടെ എണ്ണം",
-  "minimumUpdateAgeDays": "Minimum age for updates",
+  "minimumUpdateAge": "Minimum age for updates",
   "minute": {
     "one": "{} മിനിറ്റ്",
     "other": "{} മിനിറ്റുകൾ"

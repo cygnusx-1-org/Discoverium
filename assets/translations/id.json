@@ -258,7 +258,7 @@
   "matchGroupToUseForX": "Cocokkan grup yang akan digunakan untuk \"{}\"",
   "matchLinksOutsideATags": "Mencocokkan tautan di luar tag <a>",
   "minStarCount": "Jumlah bintang minimum",
-  "minimumUpdateAgeDays": "Minimum age for updates",
+  "minimumUpdateAge": "Minimum age for updates",
   "minute": {
     "one": "{} menit",
     "other": "{} menit"

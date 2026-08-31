@@ -258,7 +258,7 @@
   "matchGroupToUseForX": "要用於「{}」的符合群組",
   "matchLinksOutsideATags": "符合 <a> 標籤外的連結",
   "minStarCount": "星號數量下限",
-  "minimumUpdateAgeDays": "Minimum age for updates",
+  "minimumUpdateAge": "Minimum age for updates",
   "minute": {
     "one": "{} 分鐘",
     "other": "{} 分鐘"

@@ -297,14 +297,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.0.2"
-  equations:
-    dependency: "direct main"
-    description:
-      name: equations
-      sha256: "10b744996f9e3440ef66c7facb2adc4015939b8f9d15aebc6d7c3855a72c818c"
-      url: "https://pub.dev"
-    source: hosted
-    version: "6.0.0"
   fake_async:
     dependency: transitive
     description:
@@ -557,14 +549,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "10.0.0"
-  fraction:
-    dependency: transitive
-    description:
-      name: fraction
-      sha256: dd487c01c0bfdcccc44d15250b24b4bee94b6981e01e8c41007a1b02f395ea01
-      url: "https://pub.dev"
-    source: hosted
-    version: "5.0.5"
   gtk:
     dependency: transitive
     description:

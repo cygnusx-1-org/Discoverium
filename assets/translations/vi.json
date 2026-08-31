@@ -258,7 +258,7 @@
   "matchGroupToUseForX": "Nhóm khớp được dùng cho \"{}\"",
   "matchLinksOutsideATags": "Khớp các liên kết bên ngoài thẻ <a>",
   "minStarCount": "Số lượng sao tối thiểu",
-  "minimumUpdateAgeDays": "Minimum age for updates",
+  "minimumUpdateAge": "Minimum age for updates",
   "minute": {
     "one": "{} phút",
     "other": "{} phút"

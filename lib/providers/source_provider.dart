@@ -48,6 +48,7 @@ import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/app_sources/githubstars.dart';
 import 'package:obtainium/core/logging/app_logger.dart';
 import 'package:obtainium/providers/settings_provider.dart';
+import 'package:obtainium/utils/format_utils.dart';
 
 part 'app_json_migration.dart';
 
@@ -172,6 +173,14 @@ class App {
   final DateTime? releaseDate;
   final String? changeLog;
 
+  /// The newer release the minimum-update-age hold is currently withholding,
+  /// and the date it was published. Null whenever nothing is being held.
+  ///
+  /// Everything else on the record describes the release actually being
+  /// offered, so these two are the only trace of the one waiting behind it.
+  final String? heldVersion;
+  final DateTime? heldReleaseDate;
+
   /// Notes for the newest few releases, newest first, cached by the update
   /// check so the detail page usually needs no request at all.
   final List<ReleaseNotes> recentReleases;
@@ -195,6 +204,8 @@ class App {
     this.categories = const [],
     this.releaseDate,
     this.changeLog,
+    this.heldVersion,
+    this.heldReleaseDate,
     this.recentReleases = const [],
     this.overrideSource,
     this.allowIdChange = false,
@@ -246,6 +257,8 @@ class App {
     List<String>? categories,
     Object? releaseDate = _sentinel,
     Object? changeLog = _sentinel,
+    Object? heldVersion = _sentinel,
+    Object? heldReleaseDate = _sentinel,
     List<ReleaseNotes>? recentReleases,
     Object? overrideSource = _sentinel,
     bool? allowIdChange,
@@ -277,6 +290,12 @@ class App {
           ? this.releaseDate
           : releaseDate as DateTime?,
       changeLog: changeLog == _sentinel ? this.changeLog : changeLog as String?,
+      heldVersion: heldVersion == _sentinel
+          ? this.heldVersion
+          : heldVersion as String?,
+      heldReleaseDate: heldReleaseDate == _sentinel
+          ? this.heldReleaseDate
+          : heldReleaseDate as DateTime?,
       recentReleases: recentReleases ?? this.recentReleases,
       overrideSource: overrideSource == _sentinel
           ? this.overrideSource
@@ -333,6 +352,10 @@ class App {
         changeLog: json['changeLog'] == null
             ? null
             : json['changeLog'] as String,
+        heldVersion: json['heldVersion'] as String?,
+        heldReleaseDate: json['heldReleaseDate'] == null
+            ? null
+            : DateTime.fromMicrosecondsSinceEpoch(json['heldReleaseDate']),
         recentReleases: json['recentReleases'] == null
             ? const []
             : (jsonDecode(json['recentReleases']) as List<dynamic>)
@@ -371,6 +394,8 @@ class App {
     'categories': categories,
     'releaseDate': releaseDate?.microsecondsSinceEpoch,
     'changeLog': changeLog,
+    'heldVersion': heldVersion,
+    'heldReleaseDate': heldReleaseDate?.microsecondsSinceEpoch,
     'recentReleases': jsonEncode(
       recentReleases.map((e) => e.toJson()).toList(),
     ),
@@ -485,10 +510,60 @@ Future<http.Response> httpClientResponseStreamToFinalResponse(
 // AppSource — abstract base class for all app sources.
 // ========================================================================
 
-/// Options (in days) for the minimum-age-for-updates setting. Zero disables
+/// Options (in hours) for the minimum-age-for-updates setting. Zero disables
 /// the delay; the empty string means "use the global default" for per-app
 /// overrides.
-const List<int> minimumUpdateAgeOptions = [0, 1, 2, 3, 5, 7, 14, 30];
+const List<int> minimumUpdateAgeHourOptions = [0, 4, 8, 12, 24, 48, 96];
+
+/// The minimum update age applied when the user has not chosen one: no delay.
+const int defaultMinimumUpdateAgeHours = 0;
+
+/// The offered option nearest [hours] without going under it, capped at the
+/// largest. Rounding up is deliberate: the day-granularity options this list
+/// replaced were finer at the top end, and a delay chosen for supply-chain
+/// safety should never be silently shortened when it is converted.
+int snapToMinimumUpdateAgeOption(int hours) =>
+    minimumUpdateAgeHourOptions.firstWhere(
+      (option) => option >= hours,
+      orElse: () => minimumUpdateAgeHourOptions.last,
+    );
+
+/// The option-label spec for a minimum-age value, resolved by [formOptLabel]
+/// (which both the settings page and the generated per-app form go through).
+String minimumUpdateAgeOptLabel(int hours) => hours == 0
+    ? 'none'
+    : hours % 24 == 0
+    ? 'day:${hours ~/ 24}'
+    : 'hour:$hours';
+
+/// The rendered label for a minimum-age value: "None", "4 hours", "2 days".
+String minimumUpdateAgeLabel(int hours) =>
+    formOptLabel(minimumUpdateAgeOptLabel(hours));
+
+/// The minimum age a release must reach before [app] will offer it, taking the
+/// app's own override when it has one and the global setting otherwise.
+Duration minimumUpdateAgeFor(App app, SettingsProvider settingsProvider) {
+  final raw = app.additionalSettings['minimumUpdateAgeHours'];
+  final hours = raw is String && raw.isNotEmpty
+      ? int.tryParse(raw) ?? settingsProvider.minimumUpdateAgeHours
+      : settingsProvider.minimumUpdateAgeHours;
+  return Duration(hours: hours < 0 ? 0 : hours);
+}
+
+/// The moment [app]'s withheld release becomes offerable, or null when nothing
+/// is being held.
+///
+/// Derived from the stored release date rather than a stored deadline so that
+/// lowering the setting releases the hold immediately instead of at the next
+/// update check.
+DateTime? appHeldUntil(App app, SettingsProvider settingsProvider) {
+  final heldReleaseDate = app.heldReleaseDate;
+  if (app.heldVersion == null || heldReleaseDate == null) return null;
+  final minimumAge = minimumUpdateAgeFor(app, settingsProvider);
+  if (minimumAge <= Duration.zero) return null;
+  final until = heldReleaseDate.add(minimumAge);
+  return until.isAfter(DateTime.now()) ? until : null;
+}
 
 abstract class AppSource {
   List<String> hosts = [];
@@ -718,14 +793,14 @@ abstract class AppSource {
       ),
     ],
     [
-      GeneratedFormSlider(
-        'minimumUpdateAgeDays',
+      GeneratedFormDropdown(
+        'minimumUpdateAgeHours',
         [
           const MapEntry('', 'useGlobalDefault'),
-          for (final days in minimumUpdateAgeOptions)
-            MapEntry(days.toString(), days == 0 ? 'none' : days.toString()),
+          for (final hours in minimumUpdateAgeHourOptions)
+            MapEntry(hours.toString(), minimumUpdateAgeOptLabel(hours)),
         ],
-        label: tr('minimumUpdateAgeDays'),
+        label: tr('minimumUpdateAge'),
         value: '',
         required: false,
       ),
@@ -1673,14 +1748,13 @@ int compareVersions(String v1, String v2) {
 /// callers that act on the ordering must not substitute a lexicographic one,
 /// because sorting two arbitrary strings says nothing about which came first.
 int? _compareVersionCores(String v1, String v2) {
-  final versionRegex = RegExp(r'(\d+(?:\.\d+)*)');
-  final m1 = versionRegex.firstMatch(v1);
-  final m2 = versionRegex.firstMatch(v2);
+  final m1 = _versionCore.firstMatch(v1);
+  final m2 = _versionCore.firstMatch(v2);
   if (m1 == null || m2 == null) {
     return null;
   }
-  final parts1 = _numericVersionParts(m1.group(1)!);
-  final parts2 = _numericVersionParts(m2.group(1)!);
+  final parts1 = _numericVersionParts(m1.group(0)!);
+  final parts2 = _numericVersionParts(m2.group(0)!);
   if (parts1 == null || parts2 == null) {
     // A segment wider than a 64-bit int cannot be ordered numerically; give up
     // rather than letting int.parse throw out of a widget build.
@@ -1707,6 +1781,26 @@ List<int>? _numericVersionParts(String core) {
   return parts;
 }
 
+/// Whether two version strings name the same release.
+///
+/// Only a leading "v" before a digit is discounted — the one piece of
+/// decoration that is pure spelling, and the difference between a GitHub tag
+/// ("v1.26") and the version the OS reports for the very same build ("1.26").
+/// Everything else is significant: "2.1.0-rc1" and "2.1.0-rc2" stay distinct.
+bool sameVersionLabel(String a, String b) =>
+    _stripVersionPrefix(a) == _stripVersionPrefix(b);
+
+String _stripVersionPrefix(String version) {
+  final trimmed = version.trim();
+  return trimmed.length > 1 &&
+          (trimmed[0] == 'v' || trimmed[0] == 'V') &&
+          _leadingDigit.hasMatch(trimmed[1])
+      ? trimmed.substring(1)
+      : trimmed;
+}
+
+final RegExp _leadingDigit = RegExp(r'[0-9]');
+
 /// Whether [latestVersion] should be offered as an update over
 /// [installedVersion].
 ///
@@ -1719,9 +1813,53 @@ List<int>? _numericVersionParts(String core) {
 /// orderable core are likewise offered — an unorderable pair is not proof the
 /// installed build is ahead.
 bool isNewer(String installedVersion, String latestVersion) {
-  if (installedVersion == latestVersion) return false;
+  if (sameVersionLabel(installedVersion, latestVersion)) return false;
   final ordering = _compareVersionCores(installedVersion, latestVersion);
-  return ordering == null || ordering <= 0;
+  if (ordering == null) return true;
+  if (ordering != 0) return ordering < 0;
+  return sameCoreIsNewer(installedVersion, latestVersion);
+}
+
+/// A pre-release marker: what follows it belongs BEFORE the release naming
+/// that core. Anchored to a separator so a commit hash or an architecture
+/// ("1.0.0-arch64") is not read as an "rc".
+final RegExp _preReleaseMarker = RegExp(
+  r'(?:^|[-_+.])(alpha|beta|rc|pre|dev|snapshot|nightly)',
+  caseSensitive: false,
+);
+
+final RegExp _versionCore = RegExp(r'\d+(?:\.\d+)*');
+
+/// Everything after a version's leading numeric core ("-rc1", "-4-9f3c-dirty",
+/// ":Eclipse"), or the empty string when the core is the whole version.
+String _versionRemainder(String version) {
+  final trimmed = version.trim();
+  final match = _versionCore.firstMatch(trimmed);
+  return match == null ? trimmed : trimmed.substring(match.end);
+}
+
+/// Whether [latest] is a newer release than [installed] when the two share a
+/// numeric core, which makes everything after that core the deciding part.
+///
+/// A pre-release marker sits before the release ("2.1.0-rc1" precedes
+/// "2.1.0"). Anything else after the core is build metadata — a git-describe
+/// suffix, a build number, a flavour name — and marks a build at or after that
+/// release, so "1.0.2-4-9f3c-dirty" is not behind "1.0.2" and "1.18.1:Eclipse"
+/// is not behind "v1.18.1".
+bool sameCoreIsNewer(String installed, String latest) {
+  final installedRest = _versionRemainder(installed);
+  final latestRest = _versionRemainder(latest);
+  final installedIsPre = _preReleaseMarker.hasMatch(installedRest);
+  final latestIsPre = _preReleaseMarker.hasMatch(latestRest);
+  // One is a pre-release of this core and the other is not: the pre-release is
+  // the older of the two, whichever side it is on.
+  if (installedIsPre != latestIsPre) return installedIsPre;
+  // Both pre-releases of the same core ("rc1" vs "rc2"): any difference is a
+  // new one, since their ordering is not something this can know.
+  if (installedIsPre) return installedRest != latestRest;
+  // Neither is a pre-release. Only the bare release moving to a decorated one
+  // is an update; the reverse is the installed build already being ahead.
+  return installedRest.isEmpty && latestRest.isNotEmpty;
 }
 
 /// Whether [app] has an update available: something is installed, and the
@@ -1733,7 +1871,18 @@ bool appHasUpdate(App app) {
   // marker), not a version: any change to it is a new release. Ordering those
   // would strand the app whenever the new label happens to sort lower, with
   // neither an update nor a "mark updated" action offered.
-  if (isVersionPseudo(app)) return installed != app.latestVersion;
+  if (isVersionPseudo(app)) {
+    // A pseudo-version is an opaque label, so any change to it is a new
+    // release — except when the two labels demonstrably name the SAME release
+    // ("1.18.1:Eclipse" and "v1.18.1"), which is not a change at all. Labels
+    // that differ otherwise stay offered, downgrades included, so an app is
+    // never stranded with neither an update nor a "mark updated" action.
+    if (sameVersionLabel(installed, app.latestVersion)) return false;
+    if (_compareVersionCores(installed, app.latestVersion) == 0) {
+      return sameCoreIsNewer(installed, app.latestVersion);
+    }
+    return true;
+  }
   return isNewer(installed, app.latestVersion);
 }
 
@@ -1965,7 +2114,10 @@ bool appHasOfferableUpdate(App app, SettingsProvider settingsProvider) =>
 bool isAppUpdateable(App app, SettingsProvider settingsProvider) {
   final installed = app.installedVersion;
   final latest = app.latestVersion;
-  if (installed == null || installed == latest) {
+  // Same-release test as [appHasUpdate], not a raw string compare: otherwise
+  // turning "hide downgrades" off brings back the phantom update of a tag
+  // against the OS's spelling of the very same build ("v1.26" vs "1.26").
+  if (installed == null || sameVersionLabel(installed, latest)) {
     return false;
   }
   if (!settingsProvider.hideDowngrades) {

@@ -881,6 +881,9 @@ class _AppPageState extends State<AppPage> {
     final tt = Theme.of(context).textTheme;
     final trackOnly = app?.app.settings.getBool('trackOnly') == true;
     final pseudo = app?.app != null && isVersionPseudo(app!.app);
+    final heldUntil = app?.app == null
+        ? null
+        : appHeldUntil(app!.app, settingsProvider);
     final apkCount = app?.app.apkUrls.length ?? 0;
     final changeLogFn = app != null ? getChangeLogFn(context, app.app) : null;
     return [
@@ -890,6 +893,16 @@ class _AppPageState extends State<AppPage> {
         children: [
           if (trackOnly) _detailNote(tr('xIsTrackOnly', args: [tr('app')])),
           if (pseudo) _detailNote(tr('pseudoVersionInUse')),
+          if (heldUntil != null)
+            _detailNote(
+              tr(
+                'updateHeldUntilX',
+                args: [
+                  app!.app.heldVersion!,
+                  heldUntil.toLocal().toString().split('.').first,
+                ],
+              ),
+            ),
           () {
             String l = appInstalledVersionText(app?.app, settingsProvider);
             final upToDate =

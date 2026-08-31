@@ -258,7 +258,7 @@
   "matchGroupToUseForX": "“{}”中引用的捕获组",
   "matchLinksOutsideATags": "匹配 <a> 标签外的链接",
   "minStarCount": "最小星标数",
-  "minimumUpdateAgeDays": "更新的最短间隔天数",
+  "minimumUpdateAge": "更新的最短间隔天数",
   "minute": {
     "one": "{} 分钟",
     "other": "{} 分钟"

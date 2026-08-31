@@ -31,15 +31,7 @@ extension AppsProviderUpdates on AppsProvider {
       currentApp.additionalSettings,
       currentApp: currentApp,
     );
-    if (_isReleaseYoungerThanMinAge(currentApp, newApp)) {
-      // Suppress the update until the release has reached the configured
-      // minimum age (supply-chain delay).
-      newApp = newApp.copyWith(
-        latestVersion: currentApp.latestVersion,
-        releaseDate: currentApp.releaseDate,
-        changeLog: currentApp.changeLog,
-      );
-    }
+    newApp = _applyMinimumUpdateAgeHold(currentApp, newApp);
     if (currentApp.preferredApkIndex < newApp.apkUrls.length) {
       newApp = newApp.copyWith(preferredApkIndex: currentApp.preferredApkIndex);
     } else if (newApp.apkUrls.isNotEmpty) {
@@ -48,20 +40,39 @@ extension AppsProviderUpdates on AppsProvider {
     return newApp;
   }
 
-  /// Returns true when [newApp]'s release is newer than the configured
-  /// minimum update age and should therefore be suppressed.
-  bool _isReleaseYoungerThanMinAge(App currentApp, App newApp) {
+  /// Holds [newApp] back at [currentApp]'s release while the newly found one
+  /// is younger than the configured minimum update age (supply-chain delay).
+  ///
+  /// Every field describing a release reverts together — version, date, notes
+  /// AND the asset URLs. Reverting only some of them leaves a record that
+  /// names the old version while pointing at the new one's APK, which reads as
+  /// a source bug on the details page and, once installed, files the withheld
+  /// release under the old version's name.
+  ///
+  /// What is being withheld is recorded so the UI can say so; it is cleared
+  /// whenever nothing is on hold, including once the release comes of age.
+  App _applyMinimumUpdateAgeHold(App currentApp, App newApp) {
+    App released() => newApp.copyWith(heldVersion: null, heldReleaseDate: null);
     final releaseDate = newApp.releaseDate;
     if (releaseDate == null ||
         newApp.latestVersion == currentApp.latestVersion) {
-      return false;
+      return released();
     }
-    final raw = currentApp.additionalSettings['minimumUpdateAgeDays'];
-    final minAgeDays = raw is String && raw.isNotEmpty
-        ? int.tryParse(raw) ?? settingsProvider.minimumUpdateAgeDays
-        : settingsProvider.minimumUpdateAgeDays;
-    if (minAgeDays <= 0) return false;
-    return DateTime.now().difference(releaseDate) < Duration(days: minAgeDays);
+    final minimumAge = minimumUpdateAgeFor(currentApp, settingsProvider);
+    if (minimumAge <= Duration.zero ||
+        DateTime.now().difference(releaseDate) >= minimumAge) {
+      return released();
+    }
+    return newApp.copyWith(
+      latestVersion: currentApp.latestVersion,
+      releaseDate: currentApp.releaseDate,
+      changeLog: currentApp.changeLog,
+      apkUrls: currentApp.apkUrls,
+      otherAssetUrls: currentApp.otherAssetUrls,
+      recentReleases: currentApp.recentReleases,
+      heldVersion: newApp.latestVersion,
+      heldReleaseDate: releaseDate,
+    );
   }
 
   Future<App?> checkUpdate(String appId) async {

@@ -196,8 +196,8 @@
   "filterAPKsByRegEx": "Filter APKs by regular expression",
   "filterApps": "Filter apps",
   "filterByLinkText": "Filter links by link text",
-  "filterReleaseNotesByRegEx": "Filter release notes by regular expression",
-  "filterReleaseTitlesByRegEx": "Filter release titles by regular expression",
+  "filterReleaseNotesByRegEx": "Only keep releases whose notes match this regular expression",
+  "filterReleaseTitlesByRegEx": "Only keep releases whose title matches this regular expression",
   "filterVersionsByRegEx": "Filter versions by regular expression",
   "followSystem": "Follow system",
   "followSystemThemeExplanation": "Following system theme is possible only by using third-party applications",
@@ -273,7 +273,8 @@
   "matchGroupToUseForX": "Match group to use for \"{}\"",
   "matchLinksOutsideATags": "Match links outside <a> tags",
   "minStarCount": "Minimum star count",
-  "minimumUpdateAgeDays": "Minimum age for updates",
+  "minimumUpdateAge": "Minimum age for updates",
+  "updateHeldUntilX": "{} is held by the minimum update age until {}",
   "minute": {
     "one": "{} minute",
     "other": "{} minutes"

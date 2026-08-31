@@ -71,6 +71,24 @@ void _migrateVersionDetectionFormat(Map<String, dynamic> additionalSettings) {
   }
 }
 
+/// Converts a per-app minimum update age from the retired day options to the
+/// current hour ones, rounding up to the next available option (capped at the
+/// largest) so a delay chosen for supply-chain safety is never shortened.
+/// An empty value — "use the global default" — carries over untouched.
+void _migrateMinimumUpdateAge(Map<String, dynamic> additionalSettings) {
+  final legacy = additionalSettings.remove('minimumUpdateAgeDays');
+  if (additionalSettings['minimumUpdateAgeHours'] is String &&
+      (additionalSettings['minimumUpdateAgeHours'] as String).isNotEmpty) {
+    return;
+  }
+  if (legacy is! String || legacy.isEmpty) return;
+  final legacyDays = int.tryParse(legacy);
+  if (legacyDays == null) return;
+  additionalSettings['minimumUpdateAgeHours'] = snapToMinimumUpdateAgeOption(
+    legacyDays * 24,
+  ).toString();
+}
+
 /// Converts legacy `supportFixedAPKURL` bool to `defaultPseudoVersioningMethod`.
 void _migratePseudoVersioningMethod(
   Map<String, dynamic> originalAdditionalSettings,
@@ -285,6 +303,7 @@ Map<String, dynamic> appJSONCompatibilityModifiers(Map<String, dynamic> json) {
     originalAdditionalSettings,
     additionalSettings,
   );
+  _migrateMinimumUpdateAge(additionalSettings);
   _coerceAdditionalSettingTypes(additionalSettings, formItems);
 
   int preferredApkIndex = json['preferredApkIndex'] == null

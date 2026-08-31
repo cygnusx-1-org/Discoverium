@@ -258,7 +258,7 @@
   "matchGroupToUseForX": "\"{}\"に使用するマッチしたグループ",
   "matchLinksOutsideATags": "<a>タグの外にあるリンクに一致させる",
   "minStarCount": "最小スター数",
-  "minimumUpdateAgeDays": "アップデートの最低経過日数",
+  "minimumUpdateAge": "アップデートの最低経過日数",
   "minute": {
     "one": "{} 分",
     "other": "{} 分"

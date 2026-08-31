@@ -258,7 +258,7 @@
   "matchGroupToUseForX": "Grupo de coincidencia a usar para\n\"{}\"",
   "matchLinksOutsideATags": "Enlaces coincidentes fuera de las etiquetas <a>",
   "minStarCount": "Número Mínimo de Estrellas",
-  "minimumUpdateAgeDays": "Minimum age for updates",
+  "minimumUpdateAge": "Minimum age for updates",
   "minute": {
     "one": "{} minuto",
     "other": "{} minutos"

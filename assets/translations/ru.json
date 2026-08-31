@@ -264,7 +264,7 @@
   "matchGroupToUseForX": "Группа соответствия для «{}»",
   "matchLinksOutsideATags": "Сопоставлять ссылки вне тегов <a>",
   "minStarCount": "Минимальное количество звёзд",
-  "minimumUpdateAgeDays": "Минимальный возраст обновлений",
+  "minimumUpdateAge": "Минимальный возраст обновлений",
   "minute": {
     "few": "{} минуты",
     "one": "{} минута",

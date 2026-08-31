@@ -258,7 +258,7 @@
   "matchGroupToUseForX": "Grupo de correspondência a utilizar para \"{}\"",
   "matchLinksOutsideATags": "Corresponder ligações fora das etiquetas <a>",
   "minStarCount": "Contagem mínima de estrelas",
-  "minimumUpdateAgeDays": "Minimum age for updates",
+  "minimumUpdateAge": "Minimum age for updates",
   "minute": {
     "one": "{} minuto",
     "other": "{} minutos"

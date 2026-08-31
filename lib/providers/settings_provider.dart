@@ -18,6 +18,56 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_storage/shared_storage.dart' as saf;
 
+/// Options (in minutes) for the background update check interval. Zero means
+/// manual checks only.
+///
+/// These were the interpolation nodes of the slider this replaced. As a
+/// dropdown they are the only reachable values, and — unlike a slider, which
+/// commits whatever value sits under a finger that merely touches it — the
+/// interval cannot be changed without deliberately picking a line.
+const List<int> updateIntervalOptions = [
+  0,
+  15,
+  30,
+  60,
+  120,
+  180,
+  360,
+  720,
+  1440,
+  4320,
+  10080,
+  20160,
+  43200,
+];
+
+/// The interval applied when the user has not chosen one: six hours.
+const int defaultUpdateIntervalMinutes = 360;
+
+/// The offered option nearest [minutes]. The slider could land anywhere
+/// between the options, so a value it stored is snapped to the closest one
+/// rather than leaving the dropdown with nothing selected.
+int snapToUpdateIntervalOption(int minutes) {
+  if (minutes <= 0) return 0;
+  // A positive interval means "check periodically", so it may never land on 0,
+  // which means "never". Snapping 5 minutes to the nearest option would
+  // otherwise turn background checking off outright.
+  var nearest = updateIntervalOptions.firstWhere((option) => option > 0);
+  for (final option in updateIntervalOptions) {
+    if (option <= 0) continue;
+    if ((option - minutes).abs() < (nearest - minutes).abs()) nearest = option;
+  }
+  return nearest;
+}
+
+/// "Never (manual only)", "15 minutes", "6 hours", "7 days".
+String updateIntervalLabel(int minutes) {
+  if (minutes <= 0) return tr('neverManualOnly');
+  if (minutes < 60) return plural('minute', minutes);
+  if (minutes < 24 * 60) return plural('hour', minutes ~/ 60);
+  return plural('day', minutes ~/ (24 * 60));
+}
+
 const String obtainiumTempId = 'cygnusx-1-org_obtainium_github.com';
 const String obtainiumId = 'org.cygnusx1.discoverium';
 const String obtainiumUrl = 'https://github.com/cygnusx-1-org/Discoverium';
@@ -71,7 +121,6 @@ class SettingsProvider with ChangeNotifier {
 
   bool? _getBool(String key) => _get<bool>(key);
   int? _getInt(String key) => _get<int>(key);
-  double? _getDouble(String key) => _get<double>(key);
   String? _getString(String key) => _get<String>(key);
 
   final String sourceUrl = obtainiumUrl;
@@ -96,6 +145,7 @@ class SettingsProvider with ChangeNotifier {
     _migrateLegacyExportSetting();
     _normalizeInstallPreference();
     _migrateGroupBySetting();
+    _migrateMinimumUpdateAgeSetting();
     notifyListeners();
   }
 
@@ -105,6 +155,21 @@ class SettingsProvider with ChangeNotifier {
     if (legacyBool != null) {
       prefs?.setInt('exportSettings', legacyBool ? 1 : 0);
     }
+  }
+
+  /// Persists the retired day-granularity minimum update age as hours.
+  ///
+  /// An explicit "none" survives as "none", and a user who never touched the
+  /// old setting falls through to the new default.
+  void _migrateMinimumUpdateAgeSetting() {
+    if (_getInt('minimumUpdateAgeHours') != null) return;
+    final legacyDays = _getInt('minimumUpdateAgeDays');
+    if (legacyDays == null) return;
+    prefs?.setInt(
+      'minimumUpdateAgeHours',
+      snapToMinimumUpdateAgeOption(legacyDays * 24),
+    );
+    unawaited(prefs?.remove('minimumUpdateAgeDays') ?? Future.value());
   }
 
   void _migrateGroupBySetting() {
@@ -240,20 +305,16 @@ class SettingsProvider with ChangeNotifier {
   }
 
   int get updateInterval {
-    return _getInt('updateInterval') ?? 360;
+    final stored = _getInt('updateInterval') ?? defaultUpdateIntervalMinutes;
+    // A value the retired slider stored can sit between the options; snap it
+    // so the dropdown always has a selection to show.
+    return updateIntervalOptions.contains(stored)
+        ? stored
+        : snapToUpdateIntervalOption(stored);
   }
 
   set updateInterval(int min) {
     prefs?.setInt('updateInterval', min);
-    notifyListeners();
-  }
-
-  double get updateIntervalSliderVal {
-    return _getDouble('updateIntervalSliderVal') ?? 6.0;
-  }
-
-  set updateIntervalSliderVal(double val) {
-    prefs?.setDouble('updateIntervalSliderVal', val);
     notifyListeners();
   }
 
@@ -753,12 +814,24 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  int get minimumUpdateAgeDays {
-    return _getInt('minimumUpdateAgeDays') ?? 0;
+  int get minimumUpdateAgeHours {
+    final hours = _getInt('minimumUpdateAgeHours');
+    if (hours != null) {
+      return minimumUpdateAgeHourOptions.contains(hours)
+          ? hours
+          : snapToMinimumUpdateAgeOption(hours);
+    }
+    // A settings backup taken before the switch to hours restores the retired
+    // key directly into prefs, so it is read here too rather than only by the
+    // startup migration.
+    final legacyDays = _getInt('minimumUpdateAgeDays');
+    return legacyDays == null
+        ? defaultMinimumUpdateAgeHours
+        : snapToMinimumUpdateAgeOption(legacyDays * 24);
   }
 
-  set minimumUpdateAgeDays(int val) {
-    prefs?.setInt('minimumUpdateAgeDays', val < 0 ? 0 : val);
+  set minimumUpdateAgeHours(int val) {
+    prefs?.setInt('minimumUpdateAgeHours', val < 0 ? 0 : val);
     notifyListeners();
   }
 

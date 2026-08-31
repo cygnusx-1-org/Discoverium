@@ -258,7 +258,7 @@
   "matchGroupToUseForX": "Zu verwendende Abgleichsgruppe für\n„{}“",
   "matchLinksOutsideATags": "Links außerhalb von <a>-Tags anpassen",
   "minStarCount": "Minimale Anzahl von Sternen",
-  "minimumUpdateAgeDays": "Minimum age for updates",
+  "minimumUpdateAge": "Minimum age for updates",
   "minute": {
     "one": "{} Minute",
     "other": "{} Minuten"

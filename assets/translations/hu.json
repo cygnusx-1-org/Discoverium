@@ -258,7 +258,7 @@
   "matchGroupToUseForX": "A(z) „{}” esetén használandó csoport egyeztetése",
   "matchLinksOutsideATags": "Hivatkozások keresése az <a> címkéken kívül is",
   "minStarCount": "Minimális csillagozási szám",
-  "minimumUpdateAgeDays": "Frissítések telepítésének késleltetése",
+  "minimumUpdateAge": "Frissítések telepítésének késleltetése",
   "minute": {
     "one": "{} perc",
     "other": "{} perc"

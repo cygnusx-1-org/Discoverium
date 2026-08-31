@@ -276,7 +276,7 @@
   "matchGroupToUseForX": "Grupa dopasowania: \"{}\"",
   "matchLinksOutsideATags": "Dopasowuj linki poza znacznikami <a>",
   "minStarCount": "Minimalna liczba gwiazdek",
-  "minimumUpdateAgeDays": "Minimum age for updates",
+  "minimumUpdateAge": "Minimum age for updates",
   "minute": {
     "few": "{} minuty",
     "many": "{} minut",

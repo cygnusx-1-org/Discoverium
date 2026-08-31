@@ -264,7 +264,7 @@
   "matchGroupToUseForX": "Shoda se skupinou k použití pro „{}“",
   "matchLinksOutsideATags": "Shoda odkazů mimo značky <a>",
   "minStarCount": "Minimální počet hvězdiček",
-  "minimumUpdateAgeDays": "Minimum age for updates",
+  "minimumUpdateAge": "Minimum age for updates",
   "minute": {
     "few": "{} minuty",
     "one": "{} minuta",

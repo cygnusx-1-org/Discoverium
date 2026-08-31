@@ -258,7 +258,7 @@
   "matchGroupToUseForX": "\"{}\"에 사용할 일치 그룹",
   "matchLinksOutsideATags": "<> 태그 외부의 링크 일치",
   "minStarCount": "최소 별 개수",
-  "minimumUpdateAgeDays": "Minimum age for updates",
+  "minimumUpdateAge": "Minimum age for updates",
   "minute": {
     "one": "{}분",
     "other": "{}분"

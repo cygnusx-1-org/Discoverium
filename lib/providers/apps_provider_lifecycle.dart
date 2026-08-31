@@ -188,8 +188,21 @@ extension AppsProviderLifecycle on AppsProvider {
     String templateVersion,
     String comparisonVersion,
   ) {
-    final templateVersionFormats = VersionService()
-        .findStandardFormatsForVersion(templateVersion, true);
+    // Both sides fall back to the unanchored formats when the anchored ones
+    // find nothing. Without it on the template side, a version carrying any
+    // decoration ("1.18.1:Eclipse") matched no format at all, so it was judged
+    // incomparable with itself — which switched the app's version detection
+    // off for good and left it comparing release labels by string equality.
+    var templateVersionFormats = VersionService().findStandardFormatsForVersion(
+      templateVersion,
+      true,
+    );
+    if (templateVersionFormats.isEmpty) {
+      templateVersionFormats = VersionService().findStandardFormatsForVersion(
+        templateVersion,
+        false,
+      );
+    }
     var comparisonVersionFormats = VersionService()
         .findStandardFormatsForVersion(comparisonVersion, true);
     if (comparisonVersionFormats.isEmpty) {
@@ -204,14 +217,25 @@ extension AppsProviderLifecycle on AppsProvider {
     if (commonStandardFormats.isEmpty) {
       return null;
     }
-    for (String pattern in commonStandardFormats) {
-      if (VersionService().doStringsMatchUnderRegEx(
-        pattern,
-        comparisonVersion,
-        templateVersion,
-      )) {
-        return VersionComparison(areEqual: true, version: comparisonVersion);
-      }
+    // Compare under the MOST SPECIFIC shared format only. Accepting any format
+    // that happens to match would call two versions equal on the strength of
+    // the loosest one they share: under "[0-9]+", "1.18.1:Eclipse" and
+    // "v1.19.0" both reduce to "1", and a real update would be recorded as
+    // already installed.
+    final ranked = commonStandardFormats.toList()
+      ..sort((a, b) {
+        final digitRuns = RegExp('[0-9]');
+        final runsA = digitRuns.allMatches(a).length;
+        final runsB = digitRuns.allMatches(b).length;
+        if (runsA != runsB) return runsB.compareTo(runsA);
+        return b.length.compareTo(a.length);
+      });
+    if (VersionService().doStringsMatchUnderRegEx(
+      ranked.first,
+      comparisonVersion,
+      templateVersion,
+    )) {
+      return VersionComparison(areEqual: true, version: comparisonVersion);
     }
     return VersionComparison(areEqual: false, version: templateVersion);
   }

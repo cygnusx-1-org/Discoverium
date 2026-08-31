@@ -258,7 +258,7 @@
   "matchGroupToUseForX": "\"{}\" için kullanılacak grubu eşleştir",
   "matchLinksOutsideATags": "<a> etiketi dışındaki bağlantıları eşleştir",
   "minStarCount": "Minimum yıldız sayısı",
-  "minimumUpdateAgeDays": "Minimum age for updates",
+  "minimumUpdateAge": "Minimum age for updates",
   "minute": {
     "one": "{} dakika",
     "other": "{} dakika"

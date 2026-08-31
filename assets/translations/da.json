@@ -258,7 +258,7 @@
   "matchGroupToUseForX": "Match-gruppe til brug for \"{}\"",
   "matchLinksOutsideATags": "Match links uden for <a>-tags",
   "minStarCount": "Minimum antal stjerner",
-  "minimumUpdateAgeDays": "Minimum age for updates",
+  "minimumUpdateAge": "Minimum age for updates",
   "minute": {
     "one": "{} minut",
     "other": "{} minutter"

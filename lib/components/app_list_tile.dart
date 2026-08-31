@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:easy_localization/easy_localization.dart' hide TextDirection;
 import 'package:flutter/material.dart';
@@ -269,9 +268,7 @@ class AppListTile extends StatelessWidget {
   Widget _authorText() {
     return Text(
       tr('byX', args: [appInMemory.author]),
-      maxLines: 1,
       style: TextStyle(
-        overflow: TextOverflow.ellipsis,
         fontWeight: _app.pinned ? FontWeight.bold : FontWeight.normal,
       ),
     );
@@ -312,20 +309,14 @@ class AppListTile extends StatelessWidget {
       _app,
       context.read<SettingsProvider>(),
     );
-    final Widget trailingRow = LayoutBuilder(
-      builder: (context, constraints) => Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          if (hasUpdate) ...[_updateButton(context), const SizedBox(width: 8)],
-          _VersionLabel(
-            appInMemory: appInMemory,
-            settingsProvider: settingsProvider,
-            maxWidth: math.min(constraints.maxWidth / 3, 200),
-            showChangesFn: showChangesFn,
-          ),
-        ],
-      ),
+    // The button keeps its space whether or not there is an update, so the
+    // text block beside it starts and ends on the same pixels in both states.
+    final Widget trailingRow = Visibility(
+      visible: hasUpdate,
+      maintainSize: true,
+      maintainAnimation: true,
+      maintainState: true,
+      child: _updateButton(context),
     );
 
     final disableSwipe = settingsProvider.disableSwipeActions;
@@ -424,55 +415,92 @@ class AppListTile extends StatelessWidget {
                     ),
             ),
             child: () {
-              final tile = ListTile(
-                autofocus: autofocus,
-                shape: borderRadius != null
-                    ? RoundedSuperellipseBorder(borderRadius: borderRadius!)
-                    : null,
-                tileColor: _app.pinned
-                    ? Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withValues(alpha: 0.06)
-                    : Colors.transparent,
-                selectedTileColor: Theme.of(context).colorScheme.primary
-                    .withValues(alpha: _app.pinned ? 0.2 : 0.1),
-                selected: multiSelected || detailSelected,
-                leading: settingsProvider.isTV
-                    ? null
-                    : AppIconWidget(
-                        appId: _app.id,
-                        installed: appInMemory.installedInfo != null,
-                        appsProvider: appsProvider,
-                      ),
-                onLongPress: () {
-                  settingsProvider.selectionClick();
-                  onToggleSelected();
-                },
-                title: Text(
-                  maxLines: 1,
-                  appInMemory.name,
-                  style: TextStyle(
-                    overflow: TextOverflow.ellipsis,
-                    fontWeight: _app.pinned
-                        ? FontWeight.bold
-                        : FontWeight.normal,
+              // Built from a Column rather than a ListTile: a ListTile gives
+              // its text a single row between the icon and the trailing
+              // widget, and versions are the longest strings here. On its own
+              // full-width line a version pair breaks at the arrow instead of
+              // mid-token, and it still does so at large system text scales.
+              final ShapeBorder? tileShape = borderRadius != null
+                  ? RoundedSuperellipseBorder(borderRadius: borderRadius!)
+                  : null;
+              final Color tileColor = multiSelected || detailSelected
+                  ? Theme.of(context).colorScheme.primary.withValues(
+                      alpha: _app.pinned ? 0.2 : 0.1,
+                    )
+                  : _app.pinned
+                  ? Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.06)
+                  : Colors.transparent;
+              final tile = Material(
+                color: tileColor,
+                shape: tileShape,
+                child: InkWell(
+                  autofocus: autofocus,
+                  customBorder: tileShape,
+                  onTap: onTap,
+                  onLongPress: () {
+                    settingsProvider.selectionClick();
+                    onToggleSelected();
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            if (!settingsProvider.isTV) ...[
+                              AppIconWidget(
+                                appId: _app.id,
+                                installed: appInMemory.installedInfo != null,
+                                appsProvider: appsProvider,
+                              ),
+                              const SizedBox(width: 16),
+                            ],
+                            Expanded(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    appInMemory.name,
+                                    style: TextStyle(
+                                      fontWeight: _app.pinned
+                                          ? FontWeight.bold
+                                          : FontWeight.normal,
+                                    ),
+                                  ),
+                                  _authorText(),
+                                  if (_app.hasPendingRepoRename)
+                                    _repoMovedRow(context),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            trailingRow,
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        // Spans the whole card, under the icon as well as the
+                        // text, so this is the widest line available to it.
+                        if (downloadProgress != null)
+                          DownloadProgressTrailing(
+                            progress: downloadProgress,
+                            receivedBytes: appInMemory.downloadReceivedBytes,
+                            totalBytes: appInMemory.downloadTotalBytes,
+                          )
+                        else
+                          _VersionLabel(
+                            appInMemory: appInMemory,
+                            settingsProvider: settingsProvider,
+                            showChangesFn: showChangesFn,
+                          ),
+                      ],
+                    ),
                   ),
                 ),
-                subtitle: _app.hasPendingRepoRename
-                    ? Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [_authorText(), _repoMovedRow(context)],
-                      )
-                    : _authorText(),
-                trailing: downloadProgress != null
-                    ? DownloadProgressTrailing(
-                        progress: downloadProgress,
-                        receivedBytes: appInMemory.downloadReceivedBytes,
-                        totalBytes: appInMemory.downloadTotalBytes,
-                      )
-                    : trailingRow,
-                onTap: onTap,
               );
               if (settingsProvider.isTV) {
                 return Row(
@@ -886,13 +914,11 @@ class _VersionLabel extends StatelessWidget {
   static final DateFormat _dateFmt = DateFormat('yyyy-MM-dd');
   final AppInMemory appInMemory;
   final SettingsProvider settingsProvider;
-  final double maxWidth;
   final VoidCallback? showChangesFn;
 
   const _VersionLabel({
     required this.appInMemory,
     required this.settingsProvider,
-    required this.maxWidth,
     required this.showChangesFn,
   });
 
@@ -905,70 +931,73 @@ class _VersionLabel extends StatelessWidget {
         : Theme.of(context).colorScheme.onSurfaceVariant;
     final highlight = settingsProvider.highlightTouchTargets;
 
-    Widget content = Padding(
-      padding: const EdgeInsets.all(4),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Container(
-            constraints: BoxConstraints(maxWidth: maxWidth),
-            child: DefaultTextStyle.merge(
-              style: const TextStyle(fontSize: 14),
-              child: Directionality(
-                // The "old → new" version transition uses an LTR-only arrow
-                // glyph; under an RTL Directionality it gets bidi-mirrored
-                // and reordered, making it look like a downgrade. Force LTR
-                // so it always reads in the intended direction.
-                textDirection: isVersionUpdate(app)
-                    ? TextDirection.ltr
-                    : Directionality.of(context),
-                child: Text(
-                  installedVersionText(app),
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.end,
-                  style: TextStyle(
-                    fontStyle: isVersionPseudo(app) ? FontStyle.italic : null,
-                    color: updateColor,
-                  ),
-                ),
-              ),
-            ),
+    // Versions are never shortened. A version the reader cannot see in full
+    // tells them nothing about what is being compared, so the text wraps onto
+    // as many lines as it needs rather than ellipsising — at any text scale.
+    final versionText = DefaultTextStyle.merge(
+      style: const TextStyle(fontSize: 14),
+      child: Directionality(
+        // The "old → new" transition uses an LTR-only arrow glyph; under an
+        // RTL Directionality it gets bidi-mirrored and reordered, making it
+        // look like a downgrade. Force LTR so it always reads as intended.
+        textDirection: isVersionUpdate(app)
+            ? TextDirection.ltr
+            : Directionality.of(context),
+        child: Text(
+          installedVersionText(app),
+          style: TextStyle(
+            fontStyle: isVersionPseudo(app) ? FontStyle.italic : null,
+            color: updateColor,
           ),
-          Text(
-            changesLabel(app, showChangesFn != null),
-            style: TextStyle(
-              fontStyle: FontStyle.italic,
-              color: updateColor,
-              fontSize: 13,
-              decoration: showChangesFn == null
-                  ? TextDecoration.none
-                  : TextDecoration.underline,
-            ),
-          ),
-        ],
+        ),
       ),
     );
 
-    if (showChangesFn == null) return content;
+    Widget changes = Text(
+      changesLabel(app, showChangesFn != null),
+      style: TextStyle(
+        fontStyle: FontStyle.italic,
+        color: updateColor,
+        fontSize: 13,
+        decoration: showChangesFn == null
+            ? TextDecoration.none
+            : TextDecoration.underline,
+      ),
+    );
 
-    if (highlight) {
-      content = DecoratedBox(
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: content,
-        ),
+    if (showChangesFn != null) {
+      if (highlight) {
+        changes = DecoratedBox(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: changes,
+          ),
+        );
+      }
+      // Only the date is the changelog affordance now that the row spans the
+      // tile: a full-width tap target here would swallow taps meant to open
+      // the app.
+      changes = InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: showChangesFn,
+        child: changes,
       );
     }
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: showChangesFn,
-      child: content,
+    // The version pair gets a line to itself. Sharing one with the date would
+    // reserve the date's width up front, wrapping a pair that had room for the
+    // sake of something that did not need to be beside it.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        versionText,
+        const SizedBox(height: 2),
+        Align(alignment: AlignmentDirectional.centerEnd, child: changes),
+      ],
     );
   }
 

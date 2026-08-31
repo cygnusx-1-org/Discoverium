@@ -258,7 +258,7 @@
   "matchGroupToUseForX": "مجموعة المطابقة لاستخدامها لـ \"{}\"",
   "matchLinksOutsideATags": "تطابق الروابط خارج علامات <a>",
   "minStarCount": "الحد الأدنى لعدد النجوم",
-  "minimumUpdateAgeDays": "Minimum age for updates",
+  "minimumUpdateAge": "Minimum age for updates",
   "minute": {
     "one": "{} دقيقة",
     "other": "{} دقائق"

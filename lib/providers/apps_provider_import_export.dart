@@ -151,8 +151,21 @@ extension AppsProviderImportExport on AppsProvider {
     for (var i = 0; i < importedApps.length; i++) {
       final a = importedApps[i];
       final installedInfo = await getInstalledInfo(a.id);
+      // A track-only or pseudo-versioned app records the SOURCE's label as its
+      // installed version, not the OS's — the two are different namespaces, and
+      // those apps compare them by equality. Overwriting the label with the OS
+      // string leaves every one of them permanently "updatable" against its own
+      // release (v1.26 vs 1.26). Adding an app already respects this
+      // (add_app.dart, search.dart); import is the one path that did not.
+      final bool keepsSourceLabel =
+          a.settings.getBool('trackOnly') ||
+          !a.settings.getBool('versionDetection');
       importedApps[i] = a.copyWith(
-        installedVersion: a.settings.getBool('useVersionCodeAsOSVersion')
+        installedVersion: keepsSourceLabel
+            ? (a.settings.getBool('trackOnly') || installedInfo != null
+                  ? a.installedVersion
+                  : null)
+            : a.settings.getBool('useVersionCodeAsOSVersion')
             // `versionCode?.toString()`, not `versionCode.toString()`: the
             // latter is Null.toString() when the code is absent, which records
             // the literal string "null" as the installed version.

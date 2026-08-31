@@ -258,7 +258,7 @@
   "matchGroupToUseForX": "Overeenkomende groep te gebruiken voor \"{}\"",
   "matchLinksOutsideATags": "Koppelingen buiten <a>-tags overeenstemmen",
   "minStarCount": "Minimum aantal sterren",
-  "minimumUpdateAgeDays": "Updates uitstellen",
+  "minimumUpdateAge": "Updates uitstellen",
   "minute": {
     "one": "{} minuut",
     "other": "{} minuten"

@@ -258,7 +258,7 @@
   "matchGroupToUseForX": "Група збігів для \"{}\"",
   "matchLinksOutsideATags": "Зіставлення посилань поза тегами <a>",
   "minStarCount": "Мінімальна кількість зірок",
-  "minimumUpdateAgeDays": "Minimum age for updates",
+  "minimumUpdateAge": "Minimum age for updates",
   "minute": {
     "one": "{} хвилина",
     "other": "{} хвилин"

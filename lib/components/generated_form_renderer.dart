@@ -7,6 +7,7 @@ import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/components/generated_form_model.dart';
 import 'package:obtainium/components/ui_widgets.dart';
 import 'package:obtainium/providers/settings_provider.dart';
+import 'package:obtainium/utils/format_utils.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher_string.dart';
@@ -288,7 +289,10 @@ class _GeneratedFormState extends State<GeneratedForm> {
         return DropdownMenuItem(
           value: e2.key,
           enabled: enabled,
-          child: Opacity(opacity: enabled ? 1 : 0.5, child: Text(tr(e2.value))),
+          child: Opacity(
+            opacity: enabled ? 1 : 0.5,
+            child: Text(formOptLabel(e2.value)),
+          ),
         );
       }).toList(),
       onChanged: (value) {
@@ -681,7 +685,7 @@ class _SliderFormItemState extends State<_SliderFormItem> {
 
   String _optLabel(MapEntry<String, String> opt) {
     final days = int.tryParse(opt.value);
-    return days != null ? plural('day', days) : tr(opt.value);
+    return days != null ? plural('day', days) : formOptLabel(opt.value);
   }
 
   String get _label => _optLabel(opts[_index]);

@@ -258,7 +258,7 @@
   "matchGroupToUseForX": "Podjesite grupu za upotebu za \"{}\"",
   "matchLinksOutsideATags": "Poklopiti linkove van <a> tag-a",
   "minStarCount": "Najmanji broj zvjezdica",
-  "minimumUpdateAgeDays": "Minimum age for updates",
+  "minimumUpdateAge": "Minimum age for updates",
   "minute": {
     "one": "{} minuta",
     "other": "min."

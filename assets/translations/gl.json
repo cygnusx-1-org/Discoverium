@@ -258,7 +258,7 @@
   "matchGroupToUseForX": "Buscar no grupo a usar para \"{}\"",
   "matchLinksOutsideATags": "Buscar en ligazóns fór da etiqueta <a>",
   "minStarCount": "Número mínimo de estrelas",
-  "minimumUpdateAgeDays": "Minimum age for updates",
+  "minimumUpdateAge": "Minimum age for updates",
   "minute": {
     "one": "{} minuto",
     "other": "{} minutos"

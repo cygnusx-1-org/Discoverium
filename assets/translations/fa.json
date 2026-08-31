@@ -258,7 +258,7 @@
   "matchGroupToUseForX": "مطابقت دادن گروه برای استفاده برای \"{}\"",
   "matchLinksOutsideATags": "لینک های خارج از تگ های <a>",
   "minStarCount": "حداقل تعداد ستاره",
-  "minimumUpdateAgeDays": "Minimum age for updates",
+  "minimumUpdateAge": "Minimum age for updates",
   "minute": {
     "one": "{} دقیقه",
     "other": "{} دقیقه"

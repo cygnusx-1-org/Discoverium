@@ -258,7 +258,7 @@
   "matchGroupToUseForX": "Konformecogrupo uzota por \"{}\"",
   "matchLinksOutsideATags": "Match links outside <a> tags",
   "minStarCount": "Minimuma nombro da steloj",
-  "minimumUpdateAgeDays": "Minimum age for updates",
+  "minimumUpdateAge": "Minimum age for updates",
   "minute": {
     "one": "{} minuto",
     "other": "{} minutoj"

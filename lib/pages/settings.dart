@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:equations/equations.dart';
 import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:shizuku_apk_installer/shizuku_apk_installer.dart';
 import 'package:obtainium/components/category_editor.dart';
@@ -650,9 +649,25 @@ class _SettingsPageState extends State<SettingsPage> {
   ) {
     final settingsProvider = context.read<SettingsProvider>();
     return [
-      const CardTile(
-        padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
-        child: _UpdateIntervalSliderTile(),
+      _fieldTile(
+        context,
+        DropdownMenu<int>(
+          expandedInsets: EdgeInsets.zero,
+          label: Text(tr('bgUpdateCheckInterval')),
+          initialSelection: settingsProvider.updateInterval,
+          dropdownMenuEntries: [
+            for (final minutes in updateIntervalOptions)
+              DropdownMenuEntry(
+                value: minutes,
+                label: updateIntervalLabel(minutes),
+              ),
+          ],
+          onSelected: (value) {
+            if (value != null) {
+              settingsProvider.updateInterval = value;
+            }
+          },
+        ),
       ),
       if (showBgSection) ...[
         ToggleTile(
@@ -776,9 +791,25 @@ class _SettingsPageState extends State<SettingsPage> {
         onChanged: (value) =>
             settingsProvider.skipBulkUpdateConfirmation = value,
       ),
-      const CardTile(
-        padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
-        child: _MinimumUpdateAgeSliderTile(),
+      _fieldTile(
+        context,
+        DropdownMenu<int>(
+          expandedInsets: EdgeInsets.zero,
+          label: Text(tr('minimumUpdateAge')),
+          initialSelection: settingsProvider.minimumUpdateAgeHours,
+          dropdownMenuEntries: [
+            for (final hours in minimumUpdateAgeHourOptions)
+              DropdownMenuEntry(
+                value: hours,
+                label: minimumUpdateAgeLabel(hours),
+              ),
+          ],
+          onSelected: (value) {
+            if (value != null) {
+              settingsProvider.minimumUpdateAgeHours = value;
+            }
+          },
+        ),
       ),
       ToggleTile(
         label: tr('parallelDownloads'),
@@ -1021,310 +1052,6 @@ class _SettingsPageState extends State<SettingsPage> {
 
 extension on Color {
   ColorSwatch<Object> toSwatch() => ColorTools.createPrimarySwatch(this);
-}
-
-/// Slider tile for the minimum-age-for-updates setting. Kept as its own
-/// [StatefulWidget] so that dragging the slider only rebuilds this tile
-/// rather than the entire settings page; the chosen value is only committed
-/// to the [SettingsProvider] when the drag ends.
-class _MinimumUpdateAgeSliderTile extends StatefulWidget {
-  const _MinimumUpdateAgeSliderTile();
-
-  @override
-  State<_MinimumUpdateAgeSliderTile> createState() =>
-      _MinimumUpdateAgeSliderTileState();
-}
-
-class _MinimumUpdateAgeSliderTileState
-    extends State<_MinimumUpdateAgeSliderTile> {
-  double sliderVal = 0;
-  bool showLabel = true;
-
-  int get _days =>
-      minimumUpdateAgeOptions[sliderVal.round().clamp(
-        0,
-        minimumUpdateAgeOptions.length - 1,
-      )];
-
-  String get _label => _days == 0 ? tr('none') : plural('day', _days);
-
-  @override
-  void initState() {
-    super.initState();
-    _syncFromSettings();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _syncFromSettings();
-  }
-
-  void _syncFromSettings() {
-    final days = context.read<SettingsProvider>().minimumUpdateAgeDays;
-    final index = minimumUpdateAgeOptions.indexOf(days);
-    sliderVal = (index >= 0 ? index : 0).toDouble();
-  }
-
-  void _commit() {
-    context.read<SettingsProvider>().minimumUpdateAgeDays = _days;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final settingsProvider = context.read<SettingsProvider>();
-    final rawSlider = Slider(
-      value: sliderVal,
-      max: (minimumUpdateAgeOptions.length - 1).toDouble(),
-      divisions: minimumUpdateAgeOptions.length - 1,
-      label: _label,
-      onChanged: (double value) {
-        setState(() {
-          sliderVal = value;
-        });
-      },
-      onChangeStart: (double value) {
-        setState(() {
-          showLabel = false;
-        });
-      },
-      onChangeEnd: (double value) {
-        setState(() {
-          showLabel = true;
-        });
-        _commit();
-      },
-    );
-
-    final Widget ageSlider = settingsProvider.isTV
-        ? Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.remove),
-                onPressed: sliderVal <= 0
-                    ? null
-                    : () {
-                        final newVal = (sliderVal - 1).clamp(
-                          0.0,
-                          (minimumUpdateAgeOptions.length - 1).toDouble(),
-                        );
-                        setState(() {
-                          sliderVal = newVal;
-                        });
-                        _commit();
-                      },
-              ),
-              Expanded(child: Text(_label, textAlign: TextAlign.center)),
-              IconButton(
-                icon: const Icon(Icons.add),
-                onPressed:
-                    sliderVal >= (minimumUpdateAgeOptions.length - 1).toDouble()
-                    ? null
-                    : () {
-                        final newVal = (sliderVal + 1).clamp(
-                          0.0,
-                          (minimumUpdateAgeOptions.length - 1).toDouble(),
-                        );
-                        setState(() {
-                          sliderVal = newVal;
-                        });
-                        _commit();
-                      },
-              ),
-            ],
-          )
-        : rawSlider;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        showLabel
-            ? Text("${tr('minimumUpdateAgeDays')}: $_label")
-            : const SizedBox(height: 20),
-        ageSlider,
-      ],
-    );
-  }
-}
-
-/// The background-update-interval slider tile. Kept as its own [StatefulWidget]
-/// so that dragging the slider only rebuilds this tile rather than the entire
-/// (large) settings page; the chosen value is only committed to the
-/// [SettingsProvider] when the drag ends.
-class _UpdateIntervalSliderTile extends StatefulWidget {
-  const _UpdateIntervalSliderTile();
-
-  @override
-  State<_UpdateIntervalSliderTile> createState() =>
-      _UpdateIntervalSliderTileState();
-}
-
-class _UpdateIntervalSliderTileState extends State<_UpdateIntervalSliderTile> {
-  final List<int> updateIntervalNodes = [
-    15,
-    30,
-    60,
-    120,
-    180,
-    360,
-    720,
-    1440,
-    4320,
-    10080,
-    20160,
-    43200,
-  ];
-  int updateInterval = 0;
-  late SplineInterpolation updateIntervalInterpolator;
-  String updateIntervalLabel = tr('neverManualOnly');
-  bool showIntervalLabel = true;
-  late double sliderVal;
-
-  @override
-  void initState() {
-    super.initState();
-    initUpdateIntervalInterpolator();
-    sliderVal = context.read<SettingsProvider>().updateIntervalSliderVal;
-    processIntervalSliderValue(sliderVal);
-  }
-
-  void initUpdateIntervalInterpolator() {
-    final List<InterpolationNode> nodes = [];
-    for (final (index, element) in updateIntervalNodes.indexed) {
-      nodes.add(
-        InterpolationNode(x: index.toDouble() + 1, y: element.toDouble()),
-      );
-    }
-    updateIntervalInterpolator = SplineInterpolation(nodes: nodes);
-  }
-
-  void processIntervalSliderValue(double val) {
-    if (val < 0.5) {
-      updateInterval = 0;
-      updateIntervalLabel = tr('neverManualOnly');
-      return;
-    }
-    int valInterpolated = 0;
-    if (val < 1) {
-      valInterpolated = 15;
-    } else {
-      valInterpolated = updateIntervalInterpolator.compute(val).round();
-    }
-    if (valInterpolated < 60) {
-      updateInterval = valInterpolated;
-      updateIntervalLabel = plural('minute', valInterpolated);
-    } else if (valInterpolated < 8 * 60) {
-      final int valRounded = (valInterpolated / 15).floor() * 15;
-      updateInterval = valRounded;
-      updateIntervalLabel = plural('hour', valRounded ~/ 60);
-      final int mins = valRounded % 60;
-      if (mins != 0) updateIntervalLabel += " ${plural('minute', mins)}";
-    } else if (valInterpolated < 24 * 60) {
-      final int valRounded = (valInterpolated / 30).floor() * 30;
-      updateInterval = valRounded;
-      updateIntervalLabel = plural('hour', valRounded ~/ 60);
-    } else if (valInterpolated < 7 * 24 * 60) {
-      final int valRounded = (valInterpolated / (12 * 60)).floor() * 12 * 60;
-      updateInterval = valRounded;
-      updateIntervalLabel = plural('day', valRounded ~/ (24 * 60));
-    } else {
-      final int valRounded = (valInterpolated / (24 * 60)).floor() * 24 * 60;
-      updateInterval = valRounded;
-      updateIntervalLabel = plural('day', valRounded ~/ (24 * 60));
-    }
-  }
-
-  void _commit(double value) {
-    final settingsProvider = context.read<SettingsProvider>();
-    settingsProvider.updateIntervalSliderVal = value;
-    settingsProvider.updateInterval = updateInterval;
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    processIntervalSliderValue(sliderVal);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final settingsProvider = context.read<SettingsProvider>();
-    final rawSlider = Slider(
-      value: sliderVal,
-      max: updateIntervalNodes.length.toDouble(),
-      divisions: updateIntervalNodes.length * 20,
-      label: updateIntervalLabel,
-      onChanged: (double value) {
-        setState(() {
-          sliderVal = value;
-          processIntervalSliderValue(value);
-        });
-      },
-      onChangeStart: (double value) {
-        setState(() {
-          showIntervalLabel = false;
-        });
-      },
-      onChangeEnd: (double value) {
-        setState(() {
-          showIntervalLabel = true;
-        });
-        _commit(value);
-      },
-    );
-
-    final Widget intervalSlider = settingsProvider.isTV
-        ? Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.remove),
-                onPressed: sliderVal <= 0
-                    ? null
-                    : () {
-                        final newVal = (sliderVal - 1).clamp(
-                          0.0,
-                          updateIntervalNodes.length.toDouble(),
-                        );
-                        setState(() {
-                          sliderVal = newVal;
-                          processIntervalSliderValue(newVal);
-                        });
-                        _commit(newVal);
-                      },
-              ),
-              Expanded(
-                child: Text(updateIntervalLabel, textAlign: TextAlign.center),
-              ),
-              IconButton(
-                icon: const Icon(Icons.add),
-                onPressed: sliderVal >= updateIntervalNodes.length.toDouble()
-                    ? null
-                    : () {
-                        final newVal = (sliderVal + 1).clamp(
-                          0.0,
-                          updateIntervalNodes.length.toDouble(),
-                        );
-                        setState(() {
-                          sliderVal = newVal;
-                          processIntervalSliderValue(newVal);
-                        });
-                        _commit(newVal);
-                      },
-              ),
-            ],
-          )
-        : rawSlider;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        showIntervalLabel
-            ? Text("${tr('bgUpdateCheckInterval')}: $updateIntervalLabel")
-            : const SizedBox(height: 20),
-        intervalSlider,
-      ],
-    );
-  }
 }
 
 class _ExternalInstallerTile extends StatefulWidget {

@@ -54,7 +54,6 @@ dependencies:
   crypto: ^3.0.7
   bcrypt: ^1.2.0
   app_links: ^7.2.1
-  equations: ^6.0.0
   flex_color_picker: ^3.8.0
   android_system_font: # TODO: Forked dependency; watch upstream for releases
     git:
