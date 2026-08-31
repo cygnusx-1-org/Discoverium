@@ -89,6 +89,7 @@
   "bgUpdatesWhileChargingOnly": "Disable background updates when not charging",
   "bgUpdatesWhileLockedOnly": "Disable background updates when the device is unlocked",
   "bgUpdatesWhileLockedOnlyExplanation": "Installing an update replaces the app and stops it, so updates wait until the screen is off or the lock screen is showing. Anything skipped is retried at the next background check.",
+  "blockedByBotProtection": "Blocked by the site's bot protection - only a real browser can pass the check, so try opening the link in one",
   "byX": "By {}",
   "cancel": "Cancel",
   "cancelled": "Cancelled",

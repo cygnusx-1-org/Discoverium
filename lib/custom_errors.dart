@@ -121,6 +121,13 @@ class NoReleasesError extends ObtainiumError {
     : super.withCode('NO_RELEASES', data: {'note': note ?? ''});
 }
 
+/// The host answered with a bot-protection interstitial ("are you human")
+/// instead of the resource. Distinct from [RateLimitError]: waiting does not
+/// help, because nothing but a real browser passes the check.
+class BotProtectionError extends ObtainiumError {
+  BotProtectionError() : super.withCode('BOT_PROTECTION');
+}
+
 class NoAPKError extends ObtainiumError {
   NoAPKError() : super.withCode('NO_APK');
 }
@@ -249,6 +256,7 @@ String localizeErrorCode(String code, Map<String, dynamic>? data) {
       'requiresCredentialsInSettings',
       args: [data?['sourceName'] ?? ''],
     ),
+    'BOT_PROTECTION' => tr('blockedByBotProtection'),
     'NO_APK' => tr('noAPKFound'),
     'NO_VERSION' => tr('noVersionFound'),
     'UNSUPPORTED_URL' => tr('urlMatchesNoSource'),

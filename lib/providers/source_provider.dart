@@ -974,6 +974,10 @@ abstract class AppSource {
 ObtainiumError getObtainiumHttpError(http.Response res) =>
     HttpService().getHttpError(res);
 
+/// Delegates to [HttpService.isBotProtection].
+bool isBotProtectionResponse({String? cfMitigated, String? body}) =>
+    HttpService().isBotProtection(cfMitigated: cfMitigated, body: body);
+
 // ========================================================================
 // MassAppUrlSource — abstract base for mass URL import sources.
 // ========================================================================
@@ -1600,8 +1604,42 @@ class HttpService {
     }
   }
 
+  /// Whether a response is a bot-protection interstitial rather than the
+  /// resource. Cloudflare says so outright via `cf-mitigated` on every
+  /// challenged response; [body] is a fallback for edges that only serve the
+  /// challenge page. Callers pass [body] only for the statuses a challenge
+  /// actually uses, so this never scans an unrelated error body.
+  bool isBotProtection({String? cfMitigated, String? body}) {
+    if (cfMitigated != null && cfMitigated.isNotEmpty) return true;
+    if (body == null) return false;
+    return body.contains('challenges.cloudflare.com') ||
+        body.contains('<title>Just a moment...');
+  }
+
+  /// [http.Response.body] decodes eagerly, so it throws a [FormatException] on
+  /// a body that does not match its declared charset and on a malformed
+  /// `content-type` header. Reading it while classifying an error would replace
+  /// the real error with that exception, so failure to decode reads as "no body
+  /// to inspect".
+  String? _bodyOrNull(http.Response res) {
+    try {
+      return res.body;
+    } on FormatException {
+      return null;
+    }
+  }
+
   ObtainiumError getHttpError(http.Response res) {
     if (res.statusCode == 404) return NoReleasesError();
+    // A challenge comes back as a plain 403/503, so without this it would be
+    // reported as a rate limit ("try again in a minute") that never clears.
+    final maybeChallenged = res.statusCode == 403 || res.statusCode == 503;
+    if (isBotProtection(
+      cfMitigated: res.headers['cf-mitigated'],
+      body: maybeChallenged ? _bodyOrNull(res) : null,
+    )) {
+      return BotProtectionError();
+    }
     if (res.statusCode == 429 || res.statusCode == 403) {
       final retryAfter = res.headers['retry-after'];
       final secs = retryAfter != null ? int.tryParse(retryAfter) : null;

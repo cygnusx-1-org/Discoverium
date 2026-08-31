@@ -277,6 +277,11 @@ Future<String> checkPartialDownloadHash(
   try {
     final response = await client.send(req);
     if (response.statusCode < 200 || response.statusCode > 299) {
+      if (isBotProtectionResponse(
+        cfMitigated: response.headers['cf-mitigated'],
+      )) {
+        throw BotProtectionError()..url = url;
+      }
       throw ObtainiumError(response.reasonPhrase ?? tr('unexpectedError'))
         ..url = url;
     }
@@ -614,6 +619,13 @@ Future<File> downloadFile(
       });
       if (tempDownloadedFile.existsSync()) {
         deleteFile(tempDownloadedFile);
+      }
+      // HttpHeaders.value() throws when a header is repeated, and these edges do
+      // repeat headers, so read the list form instead.
+      if (isBotProtectionResponse(
+        cfMitigated: response.headers['cf-mitigated']?.join(','),
+      )) {
+        throw BotProtectionError()..url = url;
       }
       throw ObtainiumError(
         response.reasonPhrase.isNotEmpty

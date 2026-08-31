@@ -32,13 +32,66 @@ List<String> collectAllStringsFromJSONObject(dynamic obj) {
   return extractor(obj);
 }
 
+/// A URL run in bare text. Besides whitespace, the excluded characters are the
+/// ones RFC 3986 requires to be percent-encoded, which are exactly the
+/// delimiters that wrap URLs in the HTML, JSON and JS this is scanned over:
+/// quotes, angle brackets, backtick and backslash. Stopping at them is what
+/// keeps `{"url":"https://ex.com/a"}` from yielding `https://ex.com/a"}`.
+final RegExp _urlInLinePattern = RegExp(
+  r"""(?:http|https|ftp)://[^\s"'<>`\\]+""",
+);
+
+/// Trailing characters far more often prose punctuation than part of the URL,
+/// e.g. the comma in `get https://ex.com/a.apk, then reboot`.
+const String _trailingPunctuation = '.,;:!?';
+
+/// Closing brackets that belong to the URL only if it opened them: the parens
+/// in `https://dl.ex.com/app(arm64).apk` are real, the one in
+/// `(see https://ex.com/a.apk)` closes the prose.
+const Map<String, String> _closerToOpener = {')': '(', ']': '[', '}': '{'};
+
+/// Whether the closer ending `url.substring(0, end)` has an opener to match.
+bool _closerIsBalanced(String url, int end, String opener, String closer) {
+  var depth = 0;
+  for (var i = 0; i < end; i++) {
+    if (url[i] == opener) {
+      depth++;
+    } else if (url[i] == closer) {
+      depth--;
+    }
+  }
+  return depth >= 0;
+}
+
+/// Strips the delimiters a bare-text scan inevitably picks up off the end of
+/// [url]. Only ever shortens, so a URL captured correctly is returned as-is.
+String trimUrlEnd(String url) {
+  var end = url.length;
+  var trimming = true;
+  while (trimming && end > 0) {
+    trimming = false;
+    final last = url[end - 1];
+    if (_trailingPunctuation.contains(last)) {
+      end--;
+      trimming = true;
+      continue;
+    }
+    final opener = _closerToOpener[last];
+    if (opener != null && !_closerIsBalanced(url, end, opener, last)) {
+      end--;
+      trimming = true;
+    }
+  }
+  return url.substring(0, end);
+}
+
 List<MapEntry<String, String>> getLinksInLines(String lines) =>
-    RegExp(r'(?:(?:http|https|ftp)://)\S+')
+    _urlInLinePattern
         .allMatches(lines)
-        .map(
-          (match) =>
-              MapEntry(match.group(0)!, match.group(0)?.split('/').last ?? ''),
-        )
+        .map((match) => trimUrlEnd(match.group(0)!))
+        // Trimming can leave a bare scheme behind (e.g. the text `https://,`).
+        .where((url) => !url.endsWith('://'))
+        .map((url) => MapEntry(url, url.split('/').last))
         .toList();
 
 /// Given an HTTP response, grab some links according to the common additional settings
