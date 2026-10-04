@@ -5,6 +5,7 @@
   description: Activity launcher creates shortcuts for any installed app and hidden activities to launch them with ease
   icon: https://raw.githubusercontent.com/butzist/ActivityLauncher/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
   id: de.szalkowski.activitylauncher
+  tv: false
   type: curated
   verified: true
   releases:
@@ -16,6 +17,7 @@
   description: A free, secure and open source app for Android to manage your 2-step verification tokens.
   icon: https://raw.githubusercontent.com/beemdevelopment/Aegis/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
   id: com.beemdevelopment.aegis
+  tv: false
   type: curated
   verified: true
   releases:
@@ -27,6 +29,7 @@
   description: Material design file manager for Android
   icon: https://raw.githubusercontent.com/TeamAmaze/AmazeFileManager/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
   id: com.amaze.filemanager
+  tv: true
   type: curated
   verified: true
   releases:
@@ -38,6 +41,7 @@
   description: ANeko Reborn is a modern version of the classic ANeko app. It features a cute cat animation that follows your finger on the Android screen, inspired by apps like nekoDA, xneko, oneko, and more. This version is built for modern Android devices with better performance and compatibility.
   icon: https://raw.githubusercontent.com/pass-with-high-score/ANeko/refs/heads/master/skin_sample/src/main/res/mipmap-xxxhdpi/ic_launcher_round.webp
   id: org.nqmgaming.aneko
+  tv: false
   type: curated
   verified: true
   releases:
@@ -49,6 +53,7 @@
   description: App to AntiSplit (merge) split APKs (APKS/XAPK/APKM) to regular .APK file on Android
   icon: https://raw.githubusercontent.com/AbdurazaaqMohammed/AntiSplit-M/refs/heads/redesign/app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp
   id: com.abdurazaaqmohammed.AntiSplit
+  tv: false
   type: curated
   verified: true
   releases:
@@ -60,6 +65,7 @@
   description: Simple, easy to use Podcast player app written in Flutter and Dart.
   icon: https://raw.githubusercontent.com/amugofjava/anytime_podcast_player/refs/heads/master/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
   id: uk.me.amugofjava.anytime
+  tv: false
   type: curated
   verified: true
   releases:
@@ -71,6 +77,7 @@
   description: A simple, rational music player for android
   icon: https://raw.githubusercontent.com/OxygenCobalt/Auxio/refs/heads/dev/app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp
   id: org.oxycblt.auxio
+  tv: false
   type: curated
   verified: true
   releases:
@@ -82,6 +89,7 @@
   description: Yet another barcode scanner for Android
   icon: https://raw.githubusercontent.com/markusfisch/BinaryEye/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
   id: de.markusfisch.android.binaryeye
+  tv: false
   type: curated
   verified: true
   releases:
@@ -96,6 +104,7 @@
       title: Password Manager
   icon: https://avatars.githubusercontent.com/u/15990069?s=200&v=4
   id: com.x8bit.bitwarden
+  tv: false
   type: curated
   verified: true
   releases:
@@ -107,6 +116,7 @@
   description: A diary app for blood pressure values with customizable export and bluetooth capabilities, build for portability.
   icon: https://raw.githubusercontent.com/derdilla/blood-pressure-monitor-fl/refs/heads/main/app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
   id: com.derdilla.bloodPressureApp
+  tv: false
   type: curated
   verified: false
   releases:
@@ -118,6 +128,7 @@
   description: A modern, feature-rich Material 3 music player for Android
   icon: https://raw.githubusercontent.com/mardous/BoomingMusic/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.webp
   id: com.mardous.booming
+  tv: false
   type: curated
   verified: true
   releases:
@@ -129,6 +140,7 @@
   description: Modern weather app with graphs and thoughtful data visualization
   icon: https://raw.githubusercontent.com/davidtakac/bura/refs/heads/dev/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.webp
   id: com.davidtakac.bura
+  tv: false
   type: curated
   verified: true
   releases:
@@ -140,6 +152,7 @@
   description: Cardabase is your digital wallet for loyalty cards. Save all your shop cards in one secure place and access them instantly.
   icon: https://raw.githubusercontent.com/GeorgeYT9769/cardabase-app/refs/heads/main/assets/icons/ic_launcher.png
   id: com.georgeyt9769.cardabase
+  tv: false
   type: curated
   verified: false
   releases:
@@ -151,6 +164,7 @@
   description: Android app for streaming and downloading media.
   icon: https://raw.githubusercontent.com/recloudstream/cloudstream/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
   id: com.lagradost.cloudstream3
+  tv: false
   type: curated
   verified: false
   releases:
@@ -162,6 +176,7 @@
   description: A Reddit client on Android written in Java. It does not have any ads and it features a clean UI and smooth browsing experience.
   icon: https://raw.githubusercontent.com/cygnusx-1-org/continuum/refs/heads/master/assets/logo/space_alien.png
   id: org.cygnusx1.continuum
+  tv: false
   type: curated
   verified: true
   releases:
@@ -173,6 +188,7 @@
   description: A Reddit client on Android written in Java. It does not have any ads and it features a clean UI and smooth browsing experience.
   icon: https://raw.githubusercontent.com/cygnusx-1-org/continuum/refs/heads/beta/assets/logo/space_alien.png
   id: org.cygnusx1.continuum.beta
+  tv: false
   type: curated
   verified: true
   releases:
@@ -184,6 +200,7 @@
   description: Cromite a Bromite fork with ad blocking and privacy enhancements; take back your browser!
   icon: https://camo.githubusercontent.com/6b4ee03be91712db2d81b603a1bb83553e97b66fa49443bf27b641089ea51696/68747470733a2f2f7777772e63726f6d6974652e6f72672f6170705f69636f6e2e706e67
   id: org.cromite.cromite
+  tv: false
   type: curated
   verified: true
   releases:
@@ -195,6 +212,7 @@
   description: This icon pack adds variety and dynamism to your Home screen
   icon: https://raw.githubusercontent.com/MiepHD/cuscon/refs/heads/master/app/src/main/res/drawable-nodpi/cuscon.webp
   id: com.froxot.cuscon.foss
+  tv: false
   type: curated
   verified: true
   releases:
@@ -206,6 +224,7 @@
   description: A small, fast web browser based on Android WebView. It's tailored for E-Ink devices but also works great on normal android devices.
   icon: https://raw.githubusercontent.com/plateaukao/einkbro/refs/heads/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.webp
   id: info.plateaukao.einkbro
+  tv: false
   type: curated
   verified: true
   releases:
@@ -215,8 +234,9 @@
   category: Entertainment
   commerical: false
   description: Browse YouTube with your own rules on Android TV
-  icon: https://github.com/cygnusx-1-org/electriceel/blob/master/smarttubetv/src/main/res/mipmap-nodpi/app_icon.png
+  icon: https://raw.githubusercontent.com/cygnusx-1-org/electriceel/refs/heads/master/smarttubetv/src/main/res/mipmap-nodpi/app_icon.png
   id: org.cygnusx1.electriceel.stable
+  tv: true
   type: curated
   verified: true
   releases:
@@ -228,6 +248,7 @@
   description: Android Matrix messenger application using the Matrix Rust Sdk and Jetpack Compose
   icon: https://raw.githubusercontent.com/element-hq/element-x-android/refs/heads/develop/appicon/element/src/main/res/mipmap-xxxhdpi/ic_launcher_round.webp
   id: io.element.android.x
+  tv: false
   type: curated
   verified: true
   releases:
@@ -239,6 +260,7 @@
   description: Modern flashlight app with dim functionality on Android 13+
   icon: https://raw.githubusercontent.com/cyb3rko/flashdim/refs/heads/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
   id: com.cyb3rko.flashdim
+  tv: false
   type: curated
   verified: true
   releases:
@@ -250,6 +272,7 @@
   description: An open-source keyboard for Android which respects your privacy.
   icon: https://raw.githubusercontent.com/florisboard/florisboard/refs/heads/main/app/src/main/res/mipmap-xxxhdpi/ic_app_icon_stable_round.png
   id: dev.patrickgold.florisboard
+  tv: false
   type: curated
   verified: true
   releases:
@@ -261,6 +284,7 @@
   description: A handy phone call manager with phonebook, number blocking and multi-SIM support
   icon: https://raw.githubusercontent.com/FossifyOrg/Phone/refs/heads/main/graphics/icon.webp
   id: org.fossify.phone
+  tv: false
   type: curated
   verified: true
   releases:
@@ -272,6 +296,7 @@
   description: A free and open-source calorie counter app
   icon: https://raw.githubusercontent.com/maksimowiczm/FoodYou/refs/heads/develop/app/src/androidMain/res/mipmap-xxxhdpi/ic_launcher_round.webp
   id: com.maksimowiczm.foodyou
+  tv: false
   type: curated
   verified: true
   releases:
@@ -283,6 +308,7 @@
   description: Fork client of Telegram app for Android.
   icon: https://raw.githubusercontent.com/forkgram/TelegramAndroid/refs/heads/dev/TMessagesProj/src/main/res/mipmap-xxxhdpi/icon_01_launcher_round.png
   id: org.forkgram.messenger
+  tv: false
   type: curated
   verified: false
   releases:
@@ -294,6 +320,7 @@
   description: Combination of a beautiful clock with widget, alarm, stopwatch & timer, no ads
   icon: https://raw.githubusercontent.com/FossifyOrg/Clock/refs/heads/main/graphics/icon.webp
   id: org.fossify.clock
+  tv: false
   type: curated
   verified: true
   releases:
@@ -305,6 +332,7 @@
   description: Browse your memories without any interruptions with this photo and video gallery
   icon: https://raw.githubusercontent.com/FossifyOrg/Gallery/refs/heads/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp
   id: org.fossify.gallery
+  tv: false
   type: curated
   verified: true
   releases:
@@ -316,6 +344,7 @@
   description: An easy and quick way of managing SMS and MMS messages without ads.
   icon: https://raw.githubusercontent.com/FossifyOrg/Messages/refs/heads/main/graphics/icon.webp
   id: org.fossify.messages
+  tv: false
   type: curated
   verified: true
   releases:
@@ -327,6 +356,7 @@
   description: A simple text field for adding quick notes without ads.
   icon: https://raw.githubusercontent.com/FossifyOrg/Notes/refs/heads/main/graphics/icon.webp
   id: org.fossify.notes
+  tv: false
   type: curated
   verified: true
   releases:
@@ -338,6 +368,7 @@
   description: A convenient Android gallery for your PhotoPrism library with plenty of useful features
   icon: https://raw.githubusercontent.com/Radiokot/photoprism-android-client/refs/heads/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
   id: ua.com.radiokot.photoprism
+  tv: false
   type: curated
   verified: true
   releases:
@@ -349,6 +380,7 @@
   description: Gauguin is a Sudoku-like game where you solve grids via calculation and logic.
   icon: https://raw.githubusercontent.com/meikpiep/gauguin/refs/heads/main/gauguin-app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
   id: org.piepmeyer.gauguin
+  tv: false
   type: curated
   verified: false
   releases:
@@ -360,6 +392,7 @@
   description: A sane music player built with media3 and material design library that is following android's standard strictly.
   icon: https://raw.githubusercontent.com/FoedusProgramme/Gramophone/refs/heads/beta/app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp
   id: org.akanework.gramophone
+  tv: false
   type: curated
   verified: false
   releases:
@@ -371,6 +404,7 @@
   description: Disable / Hide / Suspend / Uninstall Android apps without root.
   icon: https://raw.githubusercontent.com/aistra0528/Hail/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
   id: com.aistra.hail
+  tv: false
   type: curated
   verified: false
   releases:
@@ -382,6 +416,7 @@
   description: Iceraven Browser is a web browser for Android, based on Mozilla's Fenix version of Firefox.
   icon: https://raw.githubusercontent.com/fork-maintainers/iceraven-browser/refs/heads/iceraven/app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp
   id: io.github.forkmaintainers
+  tv: false
   type: curated
   verified: false
   releases:
@@ -393,6 +428,7 @@
   description: Image Toolbox is a powerful app for advanced image manipulation. It offers dozens of features, from basic tools like crop and draw to filters, OCR, and a wide range of image processing options
   icon: https://raw.githubusercontent.com/T8RIN/ImageToolbox/refs/heads/master/core/resources/src/debug/res/mipmap-xxxhdpi/ic_launcher_round.webp
   id: ru.tech.imageresizeshrinker
+  tv: false
   type: curated
   verified: true
   releases:
@@ -404,6 +440,7 @@
   description: Jerboa is a native-android client for Lemmy, built using the native Android Toolkit, Jetpack Compose.
   icon: https://raw.githubusercontent.com/LemmyNet/jerboa/refs/heads/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp
   id: com.jerboa
+  tv: false
   type: curated
   verified: true
   releases:
@@ -415,6 +452,7 @@
   description: A multi-platform application for memorizing Japanese language
   icon: https://raw.githubusercontent.com/syt0r/Kanji-Dojo/refs/heads/develop/desktopApp/linux/snapcraft/gui/icon.png
   id: ua.syt0r.kanji.fdroid
+  tv: false
   type: curated
   verified: true
   releases:
@@ -426,6 +464,7 @@
   description: Kazumi is collected based on self-defined rules to support streaming online viewing, support curtains, and support real-time over-resolution.
   icon: https://raw.githubusercontent.com/Predidit/Kazumi/refs/heads/main/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
   id: com.predidit.kazumi
+  tv: false
   type: curated
   verified: false
   releases:
@@ -437,6 +476,7 @@
   description: Lightweight vault and password manager for Android, KeePassDX allows editing encrypted data in a single file in KeePass format and fill in the forms in a secure way.
   icon: https://raw.githubusercontent.com/Kunzisoft/KeePassDX/refs/heads/master/app/src/libre/res/mipmap-xxxhdpi/ic_launcher_round.png
   id: com.kunzisoft.keepass
+  tv: false
   type: curated
   verified: true
   releases:
@@ -448,6 +488,7 @@
   description: An Android app to remap the buttons on your devices
   icon: https://raw.githubusercontent.com/keymapperorg/KeyMapper/refs/heads/develop/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
   id: io.github.sds100.keymapper
+  tv: false
   type: curated
   verified: true
   releases:
@@ -459,6 +500,7 @@
   description: An ebook reader application supporting PDF, DjVu, EPUB, FB2 and many more formats, running on Cervantes, Kindle, Kobo, PocketBook and Android devices
   icon: https://raw.githubusercontent.com/koreader/koreader/master/resources/koreader.png
   id: org.koreader.launcher
+  tv: false
   type: curated
   verified: true
   releases:
@@ -470,6 +512,7 @@
   description: All in one emulator on Android!
   icon: https://raw.githubusercontent.com/Swordfish90/Lemuroid/refs/heads/master/lemuroid-app/src/main/res/mipmap-xxxhdpi/lemuroid_launcher_round.png
   id: com.swordfish.lemuroid
+  tv: false
   type: curated
   verified: true
   releases:
@@ -481,6 +524,7 @@
   description: Free and Open Source, full-featured torrent client for Android.
   icon: https://raw.githubusercontent.com/proninyaroslav/libretorrent/refs/heads/master/app/src/release/res/mipmap-xxxhdpi/ic_launcher.png
   id: org.proninyaroslav.libretorrent
+  tv: false
   type: curated
   verified: true
   releases:
@@ -492,6 +536,7 @@
   description: An alternative frontend for YouTube, for Android.
   icon: https://raw.githubusercontent.com/libre-tube/LibreTube/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
   id: com.github.libretube
+  tv: false
   type: curated
   verified: true
   releases:
@@ -503,6 +548,7 @@
   description: New Lichess mobile app in Flutter
   icon: https://raw.githubusercontent.com/lichess-org/mobile/refs/heads/main/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.webp
   id: org.lichess.mobileV2
+  tv: false
   type: curated
   verified: true
   releases:
@@ -514,6 +560,7 @@
   description: Minimalistic Android client app for Audiobookshelf
   icon: https://raw.githubusercontent.com/GrakovNe/lissen-android/refs/heads/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.webp
   id: org.grakovne.lissen
+  tv: false
   type: curated
   verified: true
   releases:
@@ -525,6 +572,7 @@
   description: An open-source cross-platform alternative to AirDrop
   icon: https://raw.githubusercontent.com/localsend/localsend/refs/heads/main/app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
   id: org.localsend.localsend_app
+  tv: false
   type: curated
   verified: true
   releases:
@@ -536,6 +584,7 @@
   description: A privacy-first, open-source platform for knowledge management and collaboration
   icon: https://raw.githubusercontent.com/logseq/logseq/refs/heads/master/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
   id: com.logseq.app
+  tv: false
   type: curated
   verified: true
   releases:
@@ -547,6 +596,7 @@
   description: Magisk is a suite of open source software for customizing Android, supporting devices higher than Android 6.0.
   icon: https://upload.wikimedia.org/wikipedia/commons/b/b8/Magisk_Logo.png
   id: com.topjohnwu.magisk
+  tv: false
   type: curated
   verified: true
   releases:
@@ -558,6 +608,7 @@
   description: Material Design file manager for Android
   icon: https://raw.githubusercontent.com/zhanghai/MaterialFiles/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/launcher_icon.png
   id: me.zhanghai.android.files
+  tv: true
   type: curated
   verified: true
   releases:
@@ -569,6 +620,7 @@
   description: Meshtastic is a tool for using Android with open-source mesh radios.
   icon: https://raw.githubusercontent.com/meshtastic/Meshtastic-Android/refs/heads/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher2_round.png
   id: com.geeksville.mesh
+  tv: false
   type: curated
   verified: true
   releases:
@@ -580,6 +632,7 @@
   description: Minimal calendar widget
   icon: https://raw.githubusercontent.com/mvmike/min-cal-widget/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
   id: cat.mvmike.minimalcalendarwidget
+  tv: false
   type: curated
   verified: true
   releases:
@@ -591,6 +644,7 @@
   description: Minimal Launcher app for Android. Customized olauncher as I just started learning kotlin.
   icon: https://raw.githubusercontent.com/DroidWorksStudio/mLauncher/refs/heads/main/fastlane/metadata/android/en-US/images/icon.png
   id: app.mlauncher
+  tv: false
   type: curated
   verified: false
   releases:
@@ -602,6 +656,7 @@
   description: video player for Android based on libmpv
   icon: https://raw.githubusercontent.com/mpv-android/mpv-android/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/mpv_launcher_icon.png
   id: is.xyz.mpv
+  tv: false
   type: curated
   verified: true
   releases:
@@ -613,6 +668,7 @@
   description: A media player for android, based on mpv-android and built with Jetpack Compose.
   icon: https://raw.githubusercontent.com/abdallahmehiz/mpvKt/refs/heads/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp
   id: live.mehiz.mpvkt
+  tv: false
   type: curated
   verified: true
   releases:
@@ -624,6 +680,7 @@
   description: The Mullvad VPN client app for desktop and mobile
   icon: https://raw.githubusercontent.com/mullvad/mullvadvpn-app/refs/heads/main/android/src/main/play/listings/en-US/graphics/icon/icon.png
   id: net.mullvad.mullvadvpn
+  tv: false
   type: curated
   verified: true
   releases:
@@ -635,6 +692,7 @@
   description: A libre lightweight streaming front-end for Android.
   icon: https://raw.githubusercontent.com/TeamNewPipe/NewPipe/dev/assets/new_pipe_icon_5.png
   id: org.schabi.newpipe
+  tv: false
   type: curated
   verified: true
   releases:
@@ -646,6 +704,7 @@
   description: The Android client for Nextcloud. Easily work with your data on your Nextcloud.
   icon: https://raw.githubusercontent.com/nextcloud/android/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
   id: com.nextcloud.client
+  tv: false
   type: curated
   verified: true
   releases:
@@ -656,6 +715,7 @@
   description: A Usenet download manager written in Kotlin for Android. It connects to your SABnzbd and NZBGet servers and searches Newznab indexers. It has no ads, and a clean UI.
   icon: https://raw.githubusercontent.com/cygnusx-1-org/NZBConnect/refs/heads/master/app/src/main/res/drawable-xxhdpi/app_logo_mark.png
   id: org.cygnusx1.nzbconnect
+  tv: false
   type: curated
   verified: true
   releases:
@@ -667,6 +727,7 @@
   description: Odyssey music player
   icon: https://raw.githubusercontent.com/gateship-one/odyssey/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
   id: org.gateshipone.odyssey
+  tv: false
   type: curated
   verified: true
   releases:
@@ -678,6 +739,7 @@
   description: Minimal AF Launcher for Android. Reduce your screen time. Daily wallpapers.
   icon: https://raw.githubusercontent.com/tanujnotes/Olauncher/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.webp
   id: app.olauncher
+  tv: false
   type: curated
   verified: true
   releases:
@@ -689,6 +751,7 @@
   description: Native version of Open Food Facts on Android - Coders & Decoders
   icon: https://raw.githubusercontent.com/openfoodfacts/smooth-app/refs/heads/develop/fastlane/metadata/android/en-US/images/icon.png
   id: openfoodfacts.github.scrachx.openfood
+  tv: false
   type: curated
   verified: true
   releases:
@@ -700,6 +763,7 @@
   description: Openbu is a Kotlin Android app for Bambu 3D printers in Developer Mode
   icon: https://raw.githubusercontent.com/cygnusx-1-org/openbu/refs/heads/master/app/src/main/ic_launcher-playstore.png
   id: org.cygnusx1.openbu
+  tv: false
   type: curated
   verified: true
   releases:
@@ -711,6 +775,7 @@
   description: Markdown Editor & Notebook for Android built with Jetpack Compose.
   icon: https://raw.githubusercontent.com/YangDai2003/OpenNote-Compose/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.webp
   id: com.yangdai.opennote
+  tv: false
   type: curated
   verified: true
   releases:
@@ -722,6 +787,7 @@
   description: OpenTracks is a sport tracking application that completely respects your privacy.
   icon: https://raw.githubusercontent.com/OpenTracksApp/OpenTracks/refs/heads/main/fastlane/metadata/android/en-US/icon.png
   id: de.dennisguse.opentracks
+  tv: false
   type: curated
   verified: true
   releases:
@@ -733,6 +799,7 @@
   description: PlainApp is an open-source app that lets you securely manage your phone from a web browser. Access files, media, contacts, SMS, calls, and more through a simple, easy-to-use interface on your desktop.
   icon: https://raw.githubusercontent.com/ismartcoding/plain-app/refs/heads/main/app/src/main/ic_launcher-playstore.png
   id: com.ismartcoding.plain
+  tv: false
   type: curated
   verified: false
   releases:
@@ -744,6 +811,7 @@
   description: Privacy Friendly QR Code Scanner for Android
   icon: https://raw.githubusercontent.com/SecUSo/privacy-friendly-qr-scanner/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
   id: com.secuso.privacyFriendlyCodeScanner
+  tv: false
   type: curated
   verified: true
   releases:
@@ -755,6 +823,7 @@
   description: Official ProtonVPN Android app
   icon: https://raw.githubusercontent.com/ProtonVPN/android-app/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
   id: ch.protonvpn.android
+  tv: false
   type: curated
   verified: true
   releases:
@@ -766,6 +835,7 @@
   description: An unofficial open source Android app for Reddit.
   icon: https://raw.githubusercontent.com/QuantumBadger/RedReader/refs/heads/master/src/main/res/mipmap-xxxhdpi/icon.png
   id: org.quantumbadger.redreader
+  tv: false
   type: curated
   verified: false
   releases:
@@ -777,6 +847,7 @@
   description: DNS over HTTPS / DNS over Tor / DNSCrypt client, WireGuard proxifier, firewall, and connection tracker for Android.
   icon: https://raw.githubusercontent.com/celzero/rethink-app/refs/heads/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
   id: com.celzero.bravedns
+  tv: false
   type: curated
   verified: true
   releases:
@@ -788,6 +859,7 @@
   description: Application to use ReVanced on Android
   icon: https://raw.githubusercontent.com/ReVanced/revanced-manager/refs/heads/main/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
   id: app.revanced.manager.flutter
+  tv: false
   type: curated
   verified: true
   releases:
@@ -799,6 +871,7 @@
   description: Satisfying monster shoote
   icon: https://raw.githubusercontent.com/adil192/ricochlime/refs/heads/main/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
   id: com.adilhanney.ricochlime
+  tv: false
   type: curated
   verified: true
   releases:
@@ -810,6 +883,7 @@
   description: Android app to search, save and share lyrics like spotify!
   icon: https://raw.githubusercontent.com/shub39/Rush/refs/heads/master/app/src/androidMain/res/mipmap-xxxhdpi/ic_launcher.png
   id: com.shub39.rush
+  tv: false
   type: curated
   verified: true
   releases:
@@ -821,6 +895,7 @@
   description: Open source version of the original Settings Database Editor
   icon: https://raw.githubusercontent.com/MuntashirAkon/SetEdit/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
   id: io.github.muntashirakon.setedit
+  tv: false
   type: curated
   verified: false
   releases:
@@ -832,6 +907,7 @@
   description: A private messenger for Android.
   icon: https://raw.githubusercontent.com/signalapp/Signal-Android/refs/heads/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
   id: org.thoughtcrime.securesms
+  tv: false
   type: curated
   verified: true
   releases:
@@ -843,6 +919,7 @@
   description: the first messaging network operating without user identifiers of any kind - 100% private by design!
   icon: https://raw.githubusercontent.com/simplex-chat/simplex-chat/refs/heads/stable/fastlane/metadata/android/en-US/images/icon.png
   id: chat.simplex.app
+  tv: false
   type: curated
   verified: true
   releases:
@@ -854,6 +931,7 @@
   description: Sky Map (formerly Google Sky Map, open sourced in 2012)
   icon: https://raw.githubusercontent.com/sky-map-team/stardroid/refs/heads/master/fastlane/metadata/android/en-US/images/icon.png
   id: com.google.android.stardroid
+  tv: false
   type: curated
   verified: true
   releases:
@@ -865,6 +943,7 @@
   description: Slide is an open-source, ad-free Reddit browser for Android. It is based around the Java Reddit API Wrapper.
   icon: https://raw.githubusercontent.com/cygnusx-1-org/Slide/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
   id: me.edgan.redditslide
+  tv: false
   type: curated
   verified: true
   releases:
@@ -876,6 +955,7 @@
   description: An open-source auto clicker on images for Android
   icon: https://raw.githubusercontent.com/Nain57/Smart-AutoClicker/refs/heads/master/smartautoclicker/src/main/ic_smart_auto_clicker-playstore.png
   id: com.buzbuz.smartautoclicker
+  tv: false
   type: curated
   verified: true
   releases:
@@ -887,6 +967,7 @@
   description: A user-friendly desktop mode launcher that offers a modern and customizable user interface
   icon: https://raw.githubusercontent.com/axel358/smartdock/refs/heads/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.webp
   id: cu.axel.smartdock
+  tv: false
   type: curated
   verified: false
   releases:
@@ -898,6 +979,7 @@
   description: Android app (and widget collection) that displays sunlight and moonlight times.
   icon: https://raw.githubusercontent.com/forrestguice/SuntimesWidget/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher_alarms_round.png
   id: com.forrestguice.suntimeswidget
+  tv: false
   type: curated
   verified: true
   releases:
@@ -909,6 +991,7 @@
   description: Our app helps you form and track micro habits with easy-to-use charts and tools, making it simple to establish healthy habits that stick. Start your personal growth journey today!
   icon: https://raw.githubusercontent.com/FriesI23/mhabit/refs/heads/main/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
   id: io.github.friesi23.mhabit
+  tv: false
   type: curated
   verified: false
   releases:
@@ -920,6 +1003,7 @@
   description: The easiest, most secure way to use WireGuard and 2FA.
   icon: https://raw.githubusercontent.com/tailscale/tailscale/refs/heads/main/release/dist/synology/files/PACKAGE_ICON_256.PNG
   id: com.tailscale.ipn
+  tv: false
   type: curated
   verified: true
   releases:
@@ -931,6 +1015,7 @@
   description: Bringing Astrid Tasks back from the dead
   icon: https://raw.githubusercontent.com/tasks/tasks/refs/heads/main/fastlane/metadata/android/en-US/images/icon.png
   id: org.tasks
+  tv: false
   type: curated
   verified: true
   releases:
@@ -942,6 +1027,7 @@
   description: A terminal emulator application for Android OS extendible by variety of packages.
   icon: https://raw.githubusercontent.com/termux/termux-app/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
   id: com.termux
+  tv: false
   type: curated
   verified: true
   releases:
@@ -953,6 +1039,7 @@
   description: App to help you remove tracking information before sharing links
   icon: https://raw.githubusercontent.com/zhanghai/Untracker/refs/heads/master/app/src/main/res/mipmap-xxxhdpi/launcher_icon.png
   id: me.zhanghai.android.untracker
+  tv: false
   type: curated
   verified: true
   releases:
@@ -964,6 +1051,7 @@
   description: Network Analyzer and Monitoring Tool
   icon: https://raw.githubusercontent.com/osociety/vernet/refs/heads/dev/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
   id: org.fsociety.vernet
+  tv: false
   type: curated
   verified: false
   releases:
@@ -975,6 +1063,7 @@
   description: Android application to analyze WiFi signals.
   icon: https://raw.githubusercontent.com/VREMSoftwareDevelopment/WiFiAnalyzer/refs/heads/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
   id: com.vrem.wifianalyzer
+  tv: false
   type: curated
   verified: true
   releases:
@@ -986,6 +1075,7 @@
   description: Android app for reading Wikipedia pages distraction-free
   icon: https://raw.githubusercontent.com/nsh07/WikiReader/refs/heads/main/app/src/main/ic_launcher-playstore.png
   id: org.nsh07.wikireader
+  tv: false
   type: curated
   verified: true
   releases:
@@ -997,6 +1087,7 @@
   description: The new Wire client for Android
   icon: https://raw.githubusercontent.com/wireapp/wire-android/refs/heads/develop/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
   id: com.wire
+  tv: false
   type: curated
   verified: true
   releases:
@@ -1008,6 +1099,7 @@
   description: Yet another calculator designed and developed for Android
   icon: https://raw.githubusercontent.com/Yet-Zio/yetCalc/refs/heads/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.webp
   id: yetzio.yetcalc
+  tv: false
   type: curated
   verified: false
   releases:
@@ -1019,6 +1111,7 @@
   description: Yubico Authenticator for Desktop (Windows, macOS and Linux) and Android
   icon: https://raw.githubusercontent.com/Yubico/yubioath-flutter/refs/heads/main/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
   id: com.yubico.yubioath
+  tv: false
   type: curated
   verified: true
   releases:
