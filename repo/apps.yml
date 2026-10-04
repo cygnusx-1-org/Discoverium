@@ -210,6 +210,17 @@
   verified: true
   releases:
     url: https://github.com/plateaukao/einkbro/releases
+- name: Electric Eel
+  authors: Nathan Grennan
+  category: Entertainment
+  commerical: false
+  description: Browse YouTube with your own rules on Android TV
+  icon: https://github.com/cygnusx-1-org/electriceel/blob/master/smarttubetv/src/main/res/mipmap-nodpi/app_icon.png
+  id: org.cygnusx1.electriceel.stable
+  type: curated
+  verified: true
+  releases:
+    url: https://github.com/cygnusx-1-org/electriceel/releases
 - name: Element
   authors: Benoit Marty, Francois Chasseur
   category: communication
