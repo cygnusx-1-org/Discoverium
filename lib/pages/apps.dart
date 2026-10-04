@@ -835,7 +835,15 @@ class AppsPageState extends State<AppsPage> {
       borderRadius: borderRadius,
       multiSelected: selectedAppIds.contains(app.id),
       detailSelected: widget.selectedAppId == app.id,
-      autofocus: autofocus && settingsProvider.isTV,
+      // Only while the list's route is on top: an autofocus in a covered route
+      // still applies when that route has nothing focused yet, so a tile that
+      // appears behind a dialog (Discoverium's own entry, added on first run
+      // under the Welcome dialog) would pull the remote's focus out of it.
+      // When the dialog closes the flag flips back and the tile autofocuses.
+      autofocus:
+          autofocus &&
+          settingsProvider.isTV &&
+          ModalRoute.isCurrentOf(context) != false,
       selectionMode: _selectionMode,
       onToggleSelected: () => toggleAppSelected(app),
       onTap: () {
@@ -1022,11 +1030,11 @@ class AppsPageState extends State<AppsPage> {
                 controller: searchController,
                 onChanged: onSearchChanged,
                 trailing: trailing,
-                hintText: tr('search'),
+                hintText: tr('searchInstalledApps'),
               )
             : SearchBar(
                 controller: searchController,
-                hintText: tr('search'),
+                hintText: tr('searchInstalledApps'),
                 padding: const WidgetStatePropertyAll(
                   AppPaddings.pageHorizontal,
                 ),
@@ -1258,6 +1266,15 @@ class AppsPageState extends State<AppsPage> {
                 slivers: <Widget>[
                   CustomAppBar(
                     title: tr('appsString'),
+                    logo: settingsProvider.isTV
+                        ? Image.asset(
+                            'assets/graphics/icon.png',
+                            width: 32,
+                            height: 32,
+                            filterQuality: FilterQuality.medium,
+                            excludeFromSemantics: true,
+                          )
+                        : null,
                     actions: [
                       if (settingsProvider.isTV)
                         IconButton(
@@ -1298,28 +1315,12 @@ class AppsPageState extends State<AppsPage> {
                       newInstallIdsAllOrSelected,
                       trackOnlyUpdateIdsAllOrSelected,
                     ),
-                  ..._getLoadingWidgets(context, appsProvider, listedApps),
-                  const _RefreshProgressBar(),
-                  _getDisplayedList(
-                    context,
-                    listedApps,
-                    groupBy,
-                    listedGroups,
-                    grouped,
-                    settingsProvider,
-                    appsProvider,
-                  ),
-                  SliverToBoxAdapter(
-                    child: SizedBox(
-                      height:
-                          MediaQuery.of(context).padding.bottom +
-                          (settingsProvider.isTV ? 160 : 96),
-                    ),
-                  ),
+                  // On TV the actions sit above the list, where the remote
+                  // reaches them without scrolling past every app.
                   if (settingsProvider.isTV)
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           spacing: 8,
@@ -1341,10 +1342,38 @@ class AppsPageState extends State<AppsPage> {
                               icon: const Icon(Icons.add),
                               label: Text(tr('addApp')),
                             ),
+                            // The phone layout's Search FAB, which a remote
+                            // could not reach once the list scrolled.
+                            FilledButton.tonalIcon(
+                              onPressed: () =>
+                                  NavHelper.pushSearchPage(context),
+                              icon: const Icon(Icons.search),
+                              label: Text(tr('search')),
+                            ),
                           ],
                         ),
                       ),
                     ),
+                  ..._getLoadingWidgets(context, appsProvider, listedApps),
+                  const _RefreshProgressBar(),
+                  _getDisplayedList(
+                    context,
+                    listedApps,
+                    groupBy,
+                    listedGroups,
+                    grouped,
+                    settingsProvider,
+                    appsProvider,
+                  ),
+                  // Last: on phones it keeps the final tile clear of the FAB,
+                  // and on TV it leaves room below the final tile.
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height:
+                          MediaQuery.of(context).padding.bottom +
+                          (settingsProvider.isTV ? 160 : 96),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1630,6 +1659,11 @@ class _TVSearchBar extends StatefulWidget {
 }
 
 class _TVSearchBarState extends State<_TVSearchBar> {
+  static const _fieldShape = OutlineInputBorder(
+    borderRadius: BorderRadius.all(Radius.circular(28)),
+    borderSide: BorderSide.none,
+  );
+
   final FocusNode _textFocus = FocusNode();
 
   @override
@@ -1644,17 +1678,19 @@ class _TVSearchBarState extends State<_TVSearchBar> {
       children: [
         TvTextFieldFocus(
           textFocusNode: _textFocus,
-          borderRadius: 28,
+          // The field's radius plus the ring's 2dp, so the ring hugs it.
+          borderRadius: 30,
           child: TextField(
             focusNode: _textFocus,
             controller: widget.controller,
             onChanged: widget.onChanged,
+            // The fill takes the shape of the border for the field's state, and
+            // the theme's enabled and focused borders are square.
             decoration: InputDecoration(
               hintText: widget.hintText,
               prefixIcon: const Icon(Icons.search_rounded),
-              border: const OutlineInputBorder(
-                borderRadius: BorderRadius.all(Radius.circular(28)),
-              ),
+              enabledBorder: _fieldShape,
+              focusedBorder: _fieldShape,
             ),
           ),
         ),

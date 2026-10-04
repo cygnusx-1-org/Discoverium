@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The default dark theme's surface ("use black theme" is on by default). -->
+    <color name="splash_background">#000000</color>
+</resources>

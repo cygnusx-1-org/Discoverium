@@ -303,7 +303,7 @@ class _SettingsPageState extends State<SettingsPage> {
       handleColorPickerCancel: handleColorPickerCancel,
     );
 
-    final sortDropdown = DropdownMenu<SortColumnSettings>(
+    final sortDropdown = TvDropdownMenu<SortColumnSettings>(
       expandedInsets: EdgeInsets.zero,
       label: Text(tr('appSortBy')),
       initialSelection: settingsProvider.sortColumn,
@@ -639,6 +639,24 @@ class _SettingsPageState extends State<SettingsPage> {
         value: settingsProvider.allowCommercialApps,
         onChanged: (value) => settingsProvider.allowCommercialApps = value,
       ),
+      _fieldTile(
+        context,
+        TvDropdownMenu<TvAppsMode>(
+          expandedInsets: EdgeInsets.zero,
+          label: Text(tr('showTvApps')),
+          initialSelection: settingsProvider.showTvApps,
+          dropdownMenuEntries: [
+            DropdownMenuEntry(value: TvAppsMode.off, label: tr('off')),
+            DropdownMenuEntry(value: TvAppsMode.on, label: tr('on')),
+            DropdownMenuEntry(value: TvAppsMode.tvOnly, label: tr('tvOnly')),
+          ],
+          onSelected: (value) {
+            if (value != null) {
+              settingsProvider.showTvApps = value;
+            }
+          },
+        ),
+      ),
     ];
   }
 
@@ -651,7 +669,7 @@ class _SettingsPageState extends State<SettingsPage> {
     return [
       _fieldTile(
         context,
-        DropdownMenu<int>(
+        TvDropdownMenu<int>(
           expandedInsets: EdgeInsets.zero,
           label: Text(tr('bgUpdateCheckInterval')),
           initialSelection: settingsProvider.updateInterval,
@@ -793,7 +811,7 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
       _fieldTile(
         context,
-        DropdownMenu<int>(
+        TvDropdownMenu<int>(
           expandedInsets: EdgeInsets.zero,
           label: Text(tr('minimumUpdateAge')),
           initialSelection: settingsProvider.minimumUpdateAgeHours,
@@ -829,7 +847,7 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
       _fieldTile(
         context,
-        DropdownMenu<String>(
+        TvDropdownMenu<String>(
           expandedInsets: EdgeInsets.zero,
           label: Text(tr('installMethod')),
           initialSelection: settingsProvider.installerMode,
@@ -968,7 +986,7 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
       _fieldTile(
         context,
-        DropdownMenu<String>(
+        TvDropdownMenu<String>(
           expandedInsets: EdgeInsets.zero,
           label: Text(tr('groupBy')),
           initialSelection: settingsProvider.groupBy,
@@ -1022,7 +1040,7 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
       _fieldTile(
         context,
-        DropdownMenu<ActionBannerMode>(
+        TvDropdownMenu<ActionBannerMode>(
           expandedInsets: EdgeInsets.zero,
           label: Text(tr('actionBanner')),
           initialSelection: settingsProvider.actionBannerMode,
@@ -1313,7 +1331,7 @@ class _LocaleDropdown extends StatelessWidget {
     final forcedLocale = context.select<SettingsProvider, Locale?>(
       (p) => p.forcedLocale,
     );
-    return DropdownMenu<Locale?>(
+    return TvDropdownMenu<Locale?>(
       expandedInsets: EdgeInsets.zero,
       label: Text(tr('language')),
       initialSelection: forcedLocale,
@@ -1344,7 +1362,7 @@ class _ColourSchemeDropdown extends StatelessWidget {
       (p) => p.colourSchemeMode,
     );
     final settingsProvider = context.read<SettingsProvider>();
-    return DropdownMenu<ColourSchemeMode>(
+    return TvDropdownMenu<ColourSchemeMode>(
       expandedInsets: EdgeInsets.zero,
       label: Text(tr('colourScheme')),
       initialSelection: colourSchemeMode,

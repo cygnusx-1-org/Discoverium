@@ -5,6 +5,10 @@ import 'package:obtainium/core/logging/app_logger.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:yaml/yaml.dart';
 
+/// How a repo entry supports Android TV, from its `tv` field: `no` (phones
+/// only), `yes` (TV as well as phones) or `only` (TV and nothing else).
+enum TvSupport { no, yes, only }
+
 /// An app entry from Discoverium's curated `repo/apps.yml`.
 class DiscoveriumApp {
   final String name;
@@ -17,6 +21,9 @@ class DiscoveriumApp {
   final List<String> categories;
   final bool verified;
   final bool commercial;
+
+  /// How the app supports Android TV, from the entry's `tv` field.
+  final TvSupport tv;
 
   /// Optional `filters.release.title` regex, applied as the app's
   /// `filterReleaseTitlesByRegEx` setting when the app is added.
@@ -33,6 +40,7 @@ class DiscoveriumApp {
     this.categories = const [],
     this.verified = false,
     this.commercial = false,
+    this.tv = TvSupport.no,
     this.releaseTitleFilterRegex,
   });
 
@@ -60,10 +68,12 @@ class DiscoveriumApp {
       }
     }
 
+    final id = yaml['id']?.toString();
+
     return DiscoveriumApp(
-      name: yaml['name']?.toString() ?? yaml['id']?.toString() ?? '?',
+      name: yaml['name']?.toString() ?? id ?? '?',
       description: yaml['description']?.toString() ?? '',
-      id: yaml['id']?.toString(),
+      id: id,
       author: author,
       url: yaml['url']?.toString(),
       icon: yaml['icon']?.toString(),
@@ -71,9 +81,30 @@ class DiscoveriumApp {
       categories: categories,
       verified: yaml['verified'] == true,
       commercial: yaml['commercial'] == true,
+      // Discoverium runs on Android TV as well as phones, whatever its entry
+      // says.
+      tv: id == obtainiumId ? TvSupport.yes : _parseTv(yaml['tv']),
       releaseTitleFilterRegex: releaseTitleFilterRegex,
     );
   }
+
+  /// Reads a `tv` field. Older repo files used `true`/`false`; a missing or
+  /// unrecognised value counts as `no`.
+  static TvSupport _parseTv(Object? value) =>
+      switch (value?.toString().toLowerCase()) {
+        'yes' || 'true' => TvSupport.yes,
+        'only' => TvSupport.only,
+        _ => TvSupport.no,
+      };
+
+  /// Whether the "Show TV apps" setting lets this entry into the Search list:
+  /// off leaves out TV-only apps, TV only leaves out the ones without TV
+  /// support.
+  bool isShownFor(TvAppsMode mode) => switch (mode) {
+    TvAppsMode.off => tv != TvSupport.only,
+    TvAppsMode.on => true,
+    TvAppsMode.tvOnly => tv != TvSupport.no,
+  };
 
   bool matchesSearch(String query) {
     final q = query.toLowerCase();

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android TV launch splash: shown from process start until Flutter draws its
+     first frame, which on a Shield is long enough that a bare window reads as
+     a blank white screen. The background is the app's own surface colour, so
+     the hand-off to the first frame doesn't flash. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/splash_background" />
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@drawable/splash_logo" />
+    </item>
+</layer-list>

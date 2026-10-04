@@ -2,18 +2,17 @@ import 'dart:async';
 
 import 'package:easy_localization/easy_localization.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:obtainium/components/generated_form_model.dart';
+import 'package:obtainium/components/generated_form_renderer.dart';
 import 'package:obtainium/components/ui_widgets.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/main.dart';
-import 'package:obtainium/pages/add_app.dart';
-import 'package:obtainium/pages/advanced_search.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/discoverium_repo.dart';
 import 'package:obtainium/core/logging/app_logger.dart';
 import 'package:obtainium/providers/notifications_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
+import 'package:obtainium/utils/nav_helper.dart';
 import 'package:provider/provider.dart';
 
 /// Browses Discoverium's curated app repository so users can discover apps
@@ -35,8 +34,14 @@ class SearchPageState extends State<SearchPage> {
   static bool _loadedOnce = false;
   static String? _lastBranch;
 
+  static const _tvFieldShape = OutlineInputBorder(
+    borderRadius: BorderRadius.all(Radius.circular(12)),
+    borderSide: BorderSide.none,
+  );
+
   late final TextEditingController _searchController;
   late final ScrollController _scrollController;
+  final FocusNode _searchFocus = FocusNode();
 
   /// Releases URLs of adds currently in flight, shown on their own rows.
   final Set<String> _addingUrls = <String>{};
@@ -80,6 +85,7 @@ class SearchPageState extends State<SearchPage> {
     }
     _searchController.dispose();
     _scrollController.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -116,12 +122,13 @@ class SearchPageState extends State<SearchPage> {
     }
   }
 
-  /// Applies the query plus the verified/commercial filters, and hides apps the
-  /// user has already added.
+  /// Applies the query plus the verified/commercial/TV filters, and hides apps
+  /// the user has already added.
   void _recomputeFiltered() {
     final settings = context.read<SettingsProvider>();
     final allowUnverified = settings.allowUnverifiedApps;
     final allowCommercial = settings.allowCommercialApps;
+    final tvAppsMode = settings.showTvApps;
     final query = _searchController.text.trim();
 
     final existingApps = context.read<AppsProvider>().apps;
@@ -135,6 +142,7 @@ class SearchPageState extends State<SearchPage> {
           (app) =>
               (allowUnverified || app.verified) &&
               (allowCommercial || !app.commercial) &&
+              app.isShownFor(tvAppsMode) &&
               (_addingUrls.contains(app.releasesUrl) ||
                   !DiscoveriumRepo.isAlreadyAdded(
                     app,
@@ -467,9 +475,32 @@ class SearchPageState extends State<SearchPage> {
   Widget build(BuildContext context) {
     // Rebuild when the verified/commercial filters or the app list change, so
     // newly added apps disappear from the results.
-    context.watch<SettingsProvider>();
+    final isTV = context.watch<SettingsProvider>().isTV;
     context.watch<AppsProvider>();
     _recomputeFiltered();
+
+    final searchField = TextField(
+      focusNode: _searchFocus,
+      controller: _searchController,
+      textInputAction: TextInputAction.search,
+      decoration: InputDecoration(
+        hintText: tr('searchHint'),
+        prefixIcon: const Icon(Icons.search),
+        suffixIcon: _searchController.text.isEmpty
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.clear),
+                tooltip: tr('clear'),
+                onPressed: _searchController.clear,
+              ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        // The fill takes the shape of the border for the field's state, and the
+        // theme's enabled and focused borders are square, which pokes out of
+        // the TV focus ring.
+        enabledBorder: isTV ? _tvFieldShape : null,
+        focusedBorder: isTV ? _tvFieldShape : null,
+      ),
+    );
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -477,9 +508,7 @@ class SearchPageState extends State<SearchPage> {
         title: Text(tr('searchApps')),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdvancedSearchPage()),
-            ),
+            onPressed: () => NavHelper.pushAdvancedSearchPage(context),
             child: Text(tr('advancedSearch')),
           ),
         ],
@@ -488,32 +517,24 @@ class SearchPageState extends State<SearchPage> {
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
-            child: TextField(
-              controller: _searchController,
-              textInputAction: TextInputAction.search,
-              decoration: InputDecoration(
-                hintText: tr('searchHint'),
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchController.text.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.clear),
-                        tooltip: tr('clear'),
-                        onPressed: _searchController.clear,
-                      ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
+            // A bare TextField keeps Up/Down for its caret, trapping the remote
+            // in the field; on TV it is entered with Select and left with Back,
+            // like every other text field.
+            child: isTV
+                ? TvTextFieldFocus(
+                    textFocusNode: _searchFocus,
+                    // The field's radius plus the ring's 2dp, so the ring hugs
+                    // it.
+                    borderRadius: 14,
+                    child: searchField,
+                  )
+                : searchField,
           ),
           Expanded(child: _body()),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const AddAppPage())),
+        onPressed: () => NavHelper.pushAddAppPage(context),
         tooltip: tr('addApp'),
         icon: const Icon(Icons.add),
         label: Text(tr('add')),

@@ -435,14 +435,17 @@ class AppListTile extends StatelessWidget {
                       children: [
                         Row(
                           children: [
-                            if (!settingsProvider.isTV) ...[
-                              AppIconWidget(
+                            // On TV the row is one remote stop; the icon's
+                            // own tap targets would each be another.
+                            ExcludeFocus(
+                              excluding: settingsProvider.isTV,
+                              child: AppIconWidget(
                                 appId: _app.id,
                                 installed: appInMemory.installedInfo != null,
                                 appsProvider: appsProvider,
                               ),
-                              const SizedBox(width: 16),
-                            ],
+                            ),
+                            const SizedBox(width: 16),
                             Expanded(
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
@@ -476,10 +479,14 @@ class AppListTile extends StatelessWidget {
                             totalBytes: appInMemory.downloadTotalBytes,
                           )
                         else
-                          _VersionLabel(
-                            appInMemory: appInMemory,
-                            settingsProvider: settingsProvider,
-                            showChangesFn: showChangesFn,
+                          // Likewise the release-date link.
+                          ExcludeFocus(
+                            excluding: settingsProvider.isTV,
+                            child: _VersionLabel(
+                              appInMemory: appInMemory,
+                              settingsProvider: settingsProvider,
+                              showChangesFn: showChangesFn,
+                            ),
                           ),
                       ],
                     ),

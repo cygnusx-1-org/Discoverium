@@ -117,10 +117,10 @@ void showError(dynamic e, BuildContext context) {
 ///
 /// Material's [DropdownMenu] makes its field non-focusable on Android
 /// (`requestFocusOnTap` defaults to false), which leaves remote users unable to
-/// reach or open it. On TV this wrapper owns focus, opens the menu with the
-/// select button, and draws a focus ring; the menu items are then navigable
-/// with the D-pad as usual. On touch devices it renders the plain
-/// [DropdownMenu].
+/// reach or open it, and its menu entries are never focusable. On TV this
+/// wrapper owns focus, draws a focus ring, and opens a picker dialog of
+/// focusable rows with the select button. On touch devices it renders the
+/// plain [DropdownMenu].
 class TvDropdownMenu<T> extends StatefulWidget {
   const TvDropdownMenu({
     super.key,
@@ -150,25 +150,76 @@ class TvDropdownMenu<T> extends StatefulWidget {
 }
 
 class _TvDropdownMenuState<T> extends State<TvDropdownMenu<T>> {
-  final MenuController _menuController = MenuController();
   final FocusNode _focusNode = FocusNode();
+
+  /// Keeps the field's ▾ button out of reach on TV. It sits inside
+  /// [DropdownMenu]'s own shortcuts, which turn Up/Down into "move the menu
+  /// highlight" and swallow them while the menu is closed, so a remote that
+  /// landed on it could never leave.
+  final FocusNode _trailingIconFocusNode = FocusNode(
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
 
   @override
   void dispose() {
     _focusNode.dispose();
+    _trailingIconFocusNode.dispose();
     super.dispose();
   }
 
-  void _openMenu() {
+  /// The TV picker. [DropdownMenu]'s entries are never focusable (it drives a
+  /// highlight from the arrow keys of a focused field instead), so on TV the
+  /// choices are offered as a dialog of focusable rows: the current value is
+  /// focused, Select picks, Back cancels, and closing the dialog returns focus
+  /// to this field.
+  Future<void> _openPicker() async {
     context.read<SettingsProvider>().selectionClick();
-    _menuController.open();
+    final picked = await showDialog<DropdownMenuEntry<T>>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: widget.label,
+        children: [
+          for (final entry in widget.dropdownMenuEntries)
+            Builder(
+              builder: (rowContext) => ListTile(
+                autofocus: entry.value == widget.initialSelection,
+                // Autofocus doesn't scroll, so in a list taller than the
+                // dialog the current row would open focused but out of sight.
+                onFocusChange: entry.value == widget.initialSelection
+                    ? (focused) {
+                        if (focused) {
+                          Scrollable.ensureVisible(
+                            rowContext,
+                            alignmentPolicy:
+                                ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+                          );
+                        }
+                      }
+                    : null,
+                enabled: entry.enabled,
+                selected: entry.value == widget.initialSelection,
+                // Both states draw an icon of the same size, so the labels
+                // line up whichever row is current.
+                leading: Icon(
+                  entry.value == widget.initialSelection
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                ),
+                title: Text(entry.label),
+                onTap: () => Navigator.of(dialogContext).pop(entry),
+              ),
+            ),
+        ],
+      ),
+    );
+    if (picked != null) widget.onSelected?.call(picked.value);
   }
 
   @override
   Widget build(BuildContext context) {
     final isTV = context.select<SettingsProvider, bool>((p) => p.isTV);
     final dropdown = DropdownMenu<T>(
-      menuController: _menuController,
       initialSelection: widget.initialSelection,
       dropdownMenuEntries: widget.dropdownMenuEntries,
       onSelected: widget.onSelected,
@@ -181,6 +232,7 @@ class _TvDropdownMenuState<T> extends State<TvDropdownMenu<T>> {
       // Focus is owned by this wrapper on TV. On other platforms keep the
       // widget's own default (keyboard-focusable on desktop).
       requestFocusOnTap: isTV ? false : null,
+      trailingIconFocusNode: isTV ? _trailingIconFocusNode : null,
     );
     if (!isTV || !widget.enabled) return dropdown;
     return Focus(
@@ -189,7 +241,7 @@ class _TvDropdownMenuState<T> extends State<TvDropdownMenu<T>> {
         if (event is KeyDownEvent &&
             (event.logicalKey == LogicalKeyboardKey.select ||
                 event.logicalKey == LogicalKeyboardKey.enter)) {
-          _openMenu();
+          _openPicker();
           return KeyEventResult.handled;
         }
         return KeyEventResult.ignored;
@@ -336,6 +388,90 @@ class DownloadCancelButton extends StatelessWidget {
   }
 }
 
+/// The control [pane]'s Up (or Down) key should move to from [focused], among
+/// [pane]'s own focusable descendants only (and of those, only the ones
+/// [where] accepts), or null when there is none that way. It goes to the
+/// nearest row of controls that way, so nothing nearer is ever skipped for
+/// something further off that happens to line up; within that row it prefers
+/// controls in line with [focused] (overlapping it horizontally), then the one
+/// whose left edge is closest. Unlike Flutter's own traversal it never picks
+/// one from a neighbouring pane.
+FocusNode? tvNextInPane(
+  FocusNode pane,
+  FocusNode focused, {
+  required bool down,
+  bool Function(FocusNode node)? where,
+}) {
+  // Controls whose near edges are this close count as one row.
+  const rowSlack = 16.0;
+  final from = focused.rect;
+  double gapTo(Rect r) => down ? r.top - from.bottom : from.top - r.bottom;
+  final ahead = <FocusNode>[];
+  var nearestGap = double.infinity;
+  for (final node in pane.traversalDescendants) {
+    if (node == focused || (where != null && !where(node))) continue;
+    final r = node.rect;
+    if (down ? r.top < from.bottom - 1 : r.bottom > from.top + 1) continue;
+    ahead.add(node);
+    if (gapTo(r) < nearestGap) nearestGap = gapTo(r);
+  }
+  FocusNode? best;
+  var bestInLine = false;
+  var bestSideways = double.infinity;
+  for (final node in ahead) {
+    final r = node.rect;
+    if (gapTo(r) > nearestGap + rowSlack) continue;
+    final inLine = r.left < from.right && r.right > from.left;
+    final sideways = (r.left - from.left).abs();
+    if (best == null ||
+        (inLine && !bestInLine) ||
+        (inLine == bestInLine && sideways < bestSideways)) {
+      best = node;
+      bestInLine = inLine;
+      bestSideways = sideways;
+    }
+  }
+  return best;
+}
+
+/// Moves focus to [node] the way Flutter's own Up/Down traversal does,
+/// scrolling it into view.
+void tvMoveFocus(FocusNode node, {required bool down}) {
+  FocusTraversalPolicy.defaultTraversalRequestFocusCallback(
+    node,
+    alignmentPolicy: down
+        ? ScrollPositionAlignmentPolicy.keepVisibleAtEnd
+        : ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+  );
+}
+
+/// Whether [event] is an Up or Down press (or repeat): true for Down, false for
+/// Up, null for anything else, and null too while a text field has focus, which
+/// keeps the keys for its caret.
+bool? tvUpDown(KeyEvent event) {
+  if (event is KeyUpEvent) return null;
+  final focusedContext = FocusManager.instance.primaryFocus?.context;
+  if (focusedContext?.findAncestorWidgetOfExactType<EditableText>() != null) {
+    return null;
+  }
+  if (event.logicalKey == LogicalKeyboardKey.arrowDown) return true;
+  if (event.logicalKey == LogicalKeyboardKey.arrowUp) return false;
+  return null;
+}
+
+/// A `Focus.onKeyEvent` for one pane of the TV two-pane layout that keeps Up
+/// and Down inside it. Off the top or bottom of a pane, Flutter's traversal
+/// would land in whatever sits beside it; the other pane is reached with Left
+/// or Right instead.
+KeyEventResult tvPaneUpDown(FocusNode pane, KeyEvent event) {
+  final down = tvUpDown(event);
+  final focused = FocusManager.instance.primaryFocus;
+  if (down == null || focused == null) return KeyEventResult.ignored;
+  final next = tvNextInPane(pane, focused, down: down);
+  if (next != null) tvMoveFocus(next, down: down);
+  return KeyEventResult.handled;
+}
+
 /// Draws a high-contrast ring around whatever is focused inside [child].
 ///
 /// Material's default focus treatment is a barely-visible overlay intended for
@@ -412,6 +548,95 @@ class ConnectedCard extends StatelessWidget {
       padding: padding ?? EdgeInsets.zero,
       borderRadius: positionalTileRadius(isFirst: isFirst, isLast: isLast),
       child: child,
+    );
+  }
+}
+
+/// The focus node of a [TvStopCard], so key handling can tell a card being
+/// read from a control.
+class TvCardFocusNode extends FocusNode {
+  TvCardFocusNode() : super(debugLabel: 'TvStopCard');
+}
+
+/// A [ConnectedCard] that on TV is a remote stop of its own, for cards with no
+/// control inside them. Focused, it takes the highlight a focused list row
+/// has: the focus colour filled in under its content and a ring around its
+/// edge, both inside the card's own shape so nothing moves. Elsewhere it is a
+/// plain [ConnectedCard].
+class TvStopCard extends StatefulWidget {
+  final Widget child;
+  final bool isFirst;
+  final bool isLast;
+  final EdgeInsetsGeometry? padding;
+
+  const TvStopCard({
+    super.key,
+    required this.child,
+    this.isFirst = true,
+    this.isLast = true,
+    this.padding = EdgeInsets.zero,
+  });
+
+  @override
+  State<TvStopCard> createState() => _TvStopCardState();
+}
+
+class _TvStopCardState extends State<TvStopCard> {
+  final TvCardFocusNode _focusNode = TvCardFocusNode();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isTV = context.select<SettingsProvider, bool>((p) => p.isTV);
+    if (!isTV) {
+      return ConnectedCard(
+        isFirst: widget.isFirst,
+        isLast: widget.isLast,
+        padding: widget.padding,
+        child: widget.child,
+      );
+    }
+    return Focus(
+      focusNode: _focusNode,
+      child: ListenableBuilder(
+        listenable: _focusNode,
+        builder: (context, child) {
+          final theme = Theme.of(context);
+          final focused = _focusNode.hasPrimaryFocus;
+          return DecoratedBox(
+            position: DecorationPosition.foreground,
+            decoration: ShapeDecoration(
+              shape: RoundedSuperellipseBorder(
+                borderRadius: positionalTileRadius(
+                  isFirst: widget.isFirst,
+                  isLast: widget.isLast,
+                ),
+                side: focused
+                    ? BorderSide(color: theme.colorScheme.primary, width: 3)
+                    : BorderSide.none,
+              ),
+            ),
+            child: ConnectedCard(
+              isFirst: widget.isFirst,
+              isLast: widget.isLast,
+              padding: widget.padding,
+              color: focused
+                  ? Color.alphaBlend(
+                      theme.focusColor,
+                      theme.colorScheme.surfaceContainerLow,
+                    )
+                  : null,
+              child: child!,
+            ),
+          );
+        },
+        child: widget.child,
+      ),
     );
   }
 }
@@ -496,10 +721,13 @@ class ActionListTile extends StatelessWidget {
 }
 
 class CustomAppBar extends StatelessWidget {
-  const CustomAppBar({super.key, required this.title, this.actions});
+  const CustomAppBar({super.key, required this.title, this.actions, this.logo});
 
   final String title;
   final List<Widget>? actions;
+
+  /// Drawn just before [title], when given.
+  final Widget? logo;
 
   @override
   Widget build(BuildContext context) {
@@ -508,7 +736,13 @@ class CustomAppBar extends StatelessWidget {
       // Root pages have nothing to pop so no leading is shown; pushed pages
       // (Settings, Add app) get the standard back button.
       automaticallyImplyLeading: true,
-      title: Text(title),
+      title: logo == null
+          ? Text(title)
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 12,
+              children: [logo!, Text(title)],
+            ),
       actions: actions,
     );
   }

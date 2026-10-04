@@ -1,5 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:obtainium/providers/discoverium_repo.dart';
+import 'package:obtainium/providers/settings_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:yaml/yaml.dart';
 
 /// The two entries named in #28, verbatim from `repo/apps.yml`.
 const fossifyClock = DiscoveriumApp(
@@ -144,6 +147,132 @@ void main() {
         }, urls(['https://github.com/Example/FossifyClockFork'])),
         isFalse,
       );
+    });
+  });
+  group('tv', () {
+    // Verbatim from `repo/apps.yml`.
+    const libreTorrentYaml = '''
+- name: LibreTorrent
+  authors: Yaroslav Pronin
+  category: tools
+  commercial: false
+  description: Free and Open Source, full-featured torrent client for Android.
+  icon: https://raw.githubusercontent.com/proninyaroslav/libretorrent/refs/heads/master/app/src/release/res/mipmap-xxxhdpi/ic_launcher.png
+  id: org.proninyaroslav.libretorrent
+  tv: no
+  type: curated
+  verified: true
+  releases:
+    url: https://github.com/proninyaroslav/libretorrent/releases
+''';
+
+    DiscoveriumApp parse(String yaml) =>
+        DiscoveriumApp.fromYaml((loadYaml(yaml) as YamlList).single as YamlMap);
+
+    DiscoveriumApp withTv(String? tvLine, {String id = 'com.example.app'}) =>
+        parse('''
+- name: Example
+  id: $id
+${tvLine == null ? '' : '  $tvLine\n'}''');
+
+    test('reads tv: no from a repo entry', () {
+      expect(parse(libreTorrentYaml).tv, TvSupport.no);
+    });
+
+    test('reads tv: yes and tv: only', () {
+      expect(withTv('tv: yes').tv, TvSupport.yes);
+      expect(withTv('tv: only').tv, TvSupport.only);
+    });
+
+    test('reads tv values in any case', () {
+      expect(withTv('tv: Yes').tv, TvSupport.yes);
+      expect(withTv('tv: ONLY').tv, TvSupport.only);
+    });
+
+    test('still reads the older tv: true and tv: false', () {
+      expect(withTv('tv: true').tv, TvSupport.yes);
+      expect(withTv('tv: false').tv, TvSupport.no);
+    });
+
+    test('a missing or unrecognised tv value means no', () {
+      expect(withTv(null).tv, TvSupport.no);
+      expect(withTv('tv: maybe').tv, TvSupport.no);
+    });
+
+    test('Discoverium supports TV whatever its entry says', () {
+      expect(withTv('tv: no', id: obtainiumId).tv, TvSupport.yes);
+      expect(withTv('tv: only', id: obtainiumId).tv, TvSupport.yes);
+      expect(withTv(null, id: obtainiumId).tv, TvSupport.yes);
+    });
+
+    const phoneApp = DiscoveriumApp(name: 'Phone', description: '');
+    const bothApp = DiscoveriumApp(
+      name: 'Both',
+      description: '',
+      tv: TvSupport.yes,
+    );
+    const tvOnlyApp = DiscoveriumApp(
+      name: 'TV',
+      description: '',
+      tv: TvSupport.only,
+    );
+
+    test('off leaves out only the TV-only apps', () {
+      expect(phoneApp.isShownFor(TvAppsMode.off), isTrue);
+      expect(bothApp.isShownFor(TvAppsMode.off), isTrue);
+      expect(tvOnlyApp.isShownFor(TvAppsMode.off), isFalse);
+    });
+
+    test('on shows everything', () {
+      expect(phoneApp.isShownFor(TvAppsMode.on), isTrue);
+      expect(bothApp.isShownFor(TvAppsMode.on), isTrue);
+      expect(tvOnlyApp.isShownFor(TvAppsMode.on), isTrue);
+    });
+
+    test('TV only shows the apps that run on TV', () {
+      expect(phoneApp.isShownFor(TvAppsMode.tvOnly), isFalse);
+      expect(bothApp.isShownFor(TvAppsMode.tvOnly), isTrue);
+      expect(tvOnlyApp.isShownFor(TvAppsMode.tvOnly), isTrue);
+    });
+  });
+  group('showTvApps setting', () {
+    Future<SettingsProvider> withPrefs(Map<String, Object> values) async {
+      SharedPreferences.setMockInitialValues(values);
+      return SettingsProvider()..prefs = await SharedPreferences.getInstance();
+    }
+
+    test('defaults to off on a phone', () async {
+      expect((await withPrefs({})).showTvApps, TvAppsMode.off);
+    });
+
+    test('defaults to TV only on Android TV', () async {
+      final settings = await withPrefs({})
+        ..isTV = true;
+      expect(settings.showTvApps, TvAppsMode.tvOnly);
+    });
+
+    test('a saved choice wins over the Android TV default', () async {
+      final settings = await withPrefs({'showTvApps': 'on'})
+        ..isTV = true;
+      expect(settings.showTvApps, TvAppsMode.on);
+    });
+
+    test('round-trips every option', () async {
+      for (final mode in TvAppsMode.values) {
+        final settings = await withPrefs({});
+        settings.showTvApps = mode;
+        expect(settings.showTvApps, mode);
+      }
+    });
+
+    test('an unknown stored value falls back to the default', () async {
+      expect(
+        (await withPrefs({'showTvApps': 'sometimes'})).showTvApps,
+        TvAppsMode.off,
+      );
+      final tv = await withPrefs({'showTvApps': 'sometimes'})
+        ..isTV = true;
+      expect(tv.showTvApps, TvAppsMode.tvOnly);
     });
   });
 }

@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:obtainium/app_sources/github.dart';
 import 'package:obtainium/components/app_list_tile.dart';
 import 'package:obtainium/components/app_markdown.dart';
 import 'package:obtainium/components/category_editor.dart';
 import 'package:obtainium/components/generated_form_renderer.dart';
+import 'package:obtainium/components/qr_code_image.dart';
 import 'package:obtainium/components/ui_widgets.dart';
 import 'package:obtainium/components/app_detail_widgets.dart';
 import 'package:obtainium/theme.dart';
@@ -78,6 +80,14 @@ class _AppPageState extends State<AppPage> {
 
   String? _aboutCacheKey;
   Widget? _aboutCache;
+
+  /// The details scroll view, which [_handleTvScrollKey] scrolls on TV.
+  final ScrollController _tvScrollController = ScrollController();
+
+  final GlobalKey _scrollViewKey = GlobalKey();
+
+  /// The whole details pane (the details and the action bar), on TV.
+  final FocusNode _tvPaneFocus = FocusNode(debugLabel: 'details pane');
 
   // Best-effort download-size probe for the currently-selected APK URL.
   String? _sizeProbeKey;
@@ -203,6 +213,8 @@ class _AppPageState extends State<AppPage> {
   @override
   void dispose() {
     webViewController = null;
+    _tvScrollController.dispose();
+    _tvPaneFocus.dispose();
     super.dispose();
   }
 
@@ -623,6 +635,17 @@ class _AppPageState extends State<AppPage> {
           icon: const Icon(Icons.settings),
           tooltip: tr('settings'),
         ),
+      // On TV the app icon is not a remote stop, so opening the app gets a
+      // button here.
+      if (settingsProvider.isTV && app != null && app.installedInfo != null)
+        IconButton(
+          onPressed: () {
+            settingsProvider.lightImpact();
+            packageManager.openApp(app.app.id);
+          },
+          icon: const Icon(Icons.play_arrow_rounded),
+          tooltip: tr('open'),
+        ),
       if (app != null && showAppWebpageFinal)
         IconButton(
           onPressed: () async {
@@ -638,6 +661,16 @@ class _AppPageState extends State<AppPage> {
           },
           icon: const Icon(Icons.more_horiz),
           tooltip: tr('more'),
+        ),
+      // On TV the release date is not a remote stop, so its changelog gets a
+      // button here. A changelog that is just the release page is already the
+      // next button.
+      if (settingsProvider.isTV &&
+          app?.app.changeLog?.trim().isNotEmpty == true)
+        IconButton(
+          onPressed: getChangeLogFn(context, app!.app),
+          tooltip: tr('changes'),
+          icon: const Icon(Icons.notes_rounded),
         ),
       if (app?.app.releaseUrl?.isNotEmpty == true)
         IconButton(
@@ -679,25 +712,36 @@ class _AppPageState extends State<AppPage> {
     ];
   }
 
+  /// One card of the page. On TV a card is a remote stop of its own unless
+  /// [hasControls], in which case its controls are the stops instead.
   Widget _buildSection(
     bool isFirst,
     bool isLast, {
     required List<Widget> children,
     EdgeInsetsGeometry? padding,
+    bool hasControls = false,
   }) {
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: children,
+    );
     return SliverToBoxAdapter(
       child: Padding(
         padding: AppPaddings.page,
-        child: ConnectedCard(
-          isFirst: isFirst,
-          isLast: isLast,
-          padding: padding ?? AppPaddings.cardInner,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: children,
-          ),
-        ),
+        child: hasControls
+            ? ConnectedCard(
+                isFirst: isFirst,
+                isLast: isLast,
+                padding: padding ?? AppPaddings.cardInner,
+                child: content,
+              )
+            : TvStopCard(
+                isFirst: isFirst,
+                isLast: isLast,
+                padding: padding ?? AppPaddings.cardInner,
+                child: content,
+              ),
       ),
     );
   }
@@ -807,18 +851,22 @@ class _AppPageState extends State<AppPage> {
   Widget _buildAppIcon(AppInMemory? app) {
     final icon = AppIcon(bytes: app?.icon, size: 56, radius: 14);
     if (app == null || app.installedInfo == null) return icon;
-    return Semantics(
-      button: true,
-      label: app.name,
-      child: TvFocusRing(
-        borderRadius: 14,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: () {
-            settingsProvider.lightImpact();
-            packageManager.openApp(app.app.id);
-          },
-          child: icon,
+    // Not a remote stop on TV, matching the app list's rows.
+    return ExcludeFocus(
+      excluding: settingsProvider.isTV,
+      child: Semantics(
+        button: true,
+        label: app.name,
+        child: TvFocusRing(
+          borderRadius: 14,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () {
+              settingsProvider.lightImpact();
+              packageManager.openApp(app.app.id);
+            },
+            child: icon,
+          ),
         ),
       ),
     );
@@ -906,25 +954,29 @@ class _AppPageState extends State<AppPage> {
           if (changeLogFn != null || app?.app.releaseDate != null)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: InkWell(
-                onTap: changeLogFn,
-                borderRadius: BorderRadius.circular(4),
-                child: Text(
-                  app?.app.releaseDate == null
-                      ? tr('changes')
-                      : app!.app.releaseDate!
-                            .toLocal()
-                            .toString()
-                            .split('.')
-                            .first,
-                  style: tt.bodyMedium?.copyWith(
-                    color: changeLogFn != null
-                        ? cs.primary
-                        : cs.onSurfaceVariant,
-                    fontStyle: changeLogFn != null ? FontStyle.italic : null,
-                    decoration: changeLogFn != null
-                        ? TextDecoration.underline
-                        : null,
+              // Not a remote stop on TV, matching the app list's rows.
+              child: ExcludeFocus(
+                excluding: settingsProvider.isTV,
+                child: InkWell(
+                  onTap: changeLogFn,
+                  borderRadius: BorderRadius.circular(4),
+                  child: Text(
+                    app?.app.releaseDate == null
+                        ? tr('changes')
+                        : app!.app.releaseDate!
+                              .toLocal()
+                              .toString()
+                              .split('.')
+                              .first,
+                    style: tt.bodyMedium?.copyWith(
+                      color: changeLogFn != null
+                          ? cs.primary
+                          : cs.onSurfaceVariant,
+                      fontStyle: changeLogFn != null ? FontStyle.italic : null,
+                      decoration: changeLogFn != null
+                          ? TextDecoration.underline
+                          : null,
+                    ),
                   ),
                 ),
               ),
@@ -995,7 +1047,8 @@ class _AppPageState extends State<AppPage> {
     if (sections == null) return const [];
     return [
       const SliverToBoxAdapter(child: SizedBox(height: AppSpacings.sectionGap)),
-      for (var i = 0; i < sections.length; i++)
+      for (var i = 0; i < sections.length; i++) ...[
+        if (i > 0) const SliverToBoxAdapter(child: SizedBox(height: 2)),
         _buildSection(
           i == 0,
           i == sections.length - 1,
@@ -1009,6 +1062,7 @@ class _AppPageState extends State<AppPage> {
                   ),
           ],
         ),
+      ],
     ];
   }
 
@@ -1238,19 +1292,29 @@ class _AppPageState extends State<AppPage> {
         true,
         certs || hasAssets ? false : true,
         children: [
-          Tooltip(
-            message: tr('copyToClipboard'),
-            child: GestureDetector(
-              onLongPress: () {
-                copyToClipboard(context, app?.app.url ?? '');
-              },
-              child: LinkText(
-                text: app?.app.url ?? '',
-                url: app?.app.url ?? '',
-                style: const TextStyle(fontStyle: FontStyle.italic),
+          // Not a remote stop on TV, like the app icon and release date.
+          ExcludeFocus(
+            excluding: settingsProvider.isTV,
+            child: Tooltip(
+              message: tr('copyToClipboard'),
+              child: GestureDetector(
+                onLongPress: () {
+                  copyToClipboard(context, app?.app.url ?? '');
+                },
+                child: LinkText(
+                  text: app?.app.url ?? '',
+                  url: app?.app.url ?? '',
+                  style: const TextStyle(fontStyle: FontStyle.italic),
+                ),
               ),
             ),
           ),
+          // On TV the link is not a remote stop, so offer it to a phone instead.
+          if (settingsProvider.isTV && (app?.app.url ?? '').isNotEmpty) ...[
+            const SizedBox(height: 12),
+            QrCodeImage(data: app!.app.url),
+            const SizedBox(height: 8),
+          ],
           const SizedBox(height: 4),
           Text(
             app?.app.id ?? '',
@@ -1301,6 +1365,7 @@ class _AppPageState extends State<AppPage> {
           false,
           true,
           padding: const EdgeInsets.all(0),
+          hasControls: true,
           children: [
             Center(
               child: TextButton.icon(
@@ -1337,6 +1402,7 @@ class _AppPageState extends State<AppPage> {
     return _buildSection(
       true,
       true,
+      hasControls: true,
       children: [
         CategorySelector(
           alignment: WrapAlignment.start,
@@ -1429,6 +1495,108 @@ class _AppPageState extends State<AppPage> {
     );
   }
 
+  /// On TV, coming over from the app list with Right always starts at the top
+  /// card, with the page scrolled back to its start. Right is still held down
+  /// while focus arrives, which tells this apart from focus coming back from a
+  /// dialog opened here.
+  void _onTvPaneFocusChange(bool hasFocus) {
+    if (!hasFocus ||
+        !settingsProvider.isTV ||
+        !HardwareKeyboard.instance.logicalKeysPressed.contains(
+          LogicalKeyboardKey.arrowRight,
+        )) {
+      return;
+    }
+    TvCardFocusNode? top;
+    for (final node in _tvPaneFocus.traversalDescendants) {
+      if (node is TvCardFocusNode &&
+          (top == null || node.rect.top < top.rect.top)) {
+        top = node;
+      }
+    }
+    if (top == null) return;
+    if (_tvScrollController.hasClients) {
+      _tvScrollController.jumpTo(_tvScrollController.position.minScrollExtent);
+    }
+    top.requestFocus();
+  }
+
+  /// On TV a remote scrolls only by moving focus, so every card is a remote
+  /// stop (see [_buildSection]), and Up and Down move from one to the next,
+  /// scrolling it into view. A card too tall for the screen is read to its
+  /// end, a step per press, before focus moves on. Like the app list beside
+  /// it, the page keeps Up and Down to itself; the list is reached with Left.
+  KeyEventResult _handleTvScrollKey(FocusNode pane, KeyEvent event) {
+    final down = tvUpDown(event);
+    final focused = FocusManager.instance.primaryFocus;
+    if (down == null || focused == null) return KeyEventResult.ignored;
+    final viewportBox = _scrollViewKey.currentContext?.findRenderObject();
+    if (viewportBox is! RenderBox ||
+        !viewportBox.hasSize ||
+        !_tvScrollController.hasClients) {
+      final next = tvNextInPane(pane, focused, down: down);
+      if (next != null) tvMoveFocus(next, down: down);
+      return KeyEventResult.handled;
+    }
+    // Whether [node] is in the scrolling details rather than the action bar.
+    // Details scrolled off the bottom sit underneath the bar, so going by
+    // position alone the bar's buttons would always look nearer.
+    bool inDetails(FocusNode node) {
+      var found = false;
+      node.context?.visitAncestorElements((element) {
+        found = element.widget.key == _scrollViewKey;
+        return !found;
+      });
+      return found;
+    }
+
+    // Nothing below the action bar.
+    if (down && !inDetails(focused)) return KeyEventResult.handled;
+    final position = _tvScrollController.position;
+    final viewport = viewportBox.localToGlobal(Offset.zero) & viewportBox.size;
+    final canScroll = down
+        ? position.pixels < position.maxScrollExtent
+        : position.pixels > position.minScrollExtent;
+    // The details come first; the action bar only once they have run out.
+    final next =
+        tvNextInPane(pane, focused, down: down, where: inDetails) ??
+        (canScroll ? null : tvNextInPane(pane, focused, down: down));
+    final readingOn =
+        focused is TvCardFocusNode &&
+        (down
+            ? focused.rect.bottom > viewport.bottom + 1
+            : focused.rect.top < viewport.top - 1);
+    if (canScroll && (readingOn || next == null)) {
+      final step = viewport.height / 2;
+      position.animateTo(
+        (position.pixels + (down ? step : -step)).clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        ),
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    } else if (next != null) {
+      next.requestFocus();
+      final nextContext = next.context;
+      if (nextContext != null) {
+        if (next.rect.height <= viewport.height) {
+          Scrollable.ensureVisible(
+            nextContext,
+            alignmentPolicy: down
+                ? ScrollPositionAlignmentPolicy.keepVisibleAtEnd
+                : ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+          );
+        } else {
+          // Taller than the screen: open on its start going down, or on its
+          // end coming back up, and read on from there.
+          Scrollable.ensureVisible(nextContext, alignment: down ? 0 : 1);
+        }
+      }
+    }
+    return KeyEventResult.handled;
+  }
+
   @override
   Widget build(BuildContext context) {
     final appsProvider = context.read<AppsProvider>();
@@ -1508,72 +1676,84 @@ class _AppPageState extends State<AppPage> {
           ? _getAppWebView(context, app)
           : waitingForReleaseNotes
           ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                Expanded(
-                  child: RefreshIndicator(
-                    onRefresh: () async {
-                      if (app != null) {
-                        await getUpdate(context);
-                      }
-                    },
-                    child: CustomScrollView(
-                      slivers: [
-                        SliverToBoxAdapter(
-                          child: SizedBox(
-                            height: MediaQuery.of(context).padding.top + 8,
+          : Focus(
+              focusNode: _tvPaneFocus,
+              canRequestFocus: false,
+              skipTraversal: true,
+              onKeyEvent: settingsProvider.isTV ? _handleTvScrollKey : null,
+              onFocusChange: _onTvPaneFocusChange,
+              child: Column(
+                children: [
+                  Expanded(
+                    child: RefreshIndicator(
+                      onRefresh: () async {
+                        if (app != null) {
+                          await getUpdate(context);
+                        }
+                      },
+                      child: CustomScrollView(
+                        key: _scrollViewKey,
+                        // Phones keep the default primary controller.
+                        controller: settingsProvider.isTV
+                            ? _tvScrollController
+                            : null,
+                        slivers: [
+                          SliverToBoxAdapter(
+                            child: SizedBox(
+                              height: MediaQuery.of(context).padding.top + 8,
+                            ),
                           ),
-                        ),
-                        _buildHeaderSection(app),
-                        ..._buildRepoRenameSection(app, appsProvider),
-                        const SliverToBoxAdapter(
-                          child: SizedBox(height: AppSpacings.sectionGap),
-                        ),
-                        ..._buildVersionInfoSections(app),
-                        const SliverToBoxAdapter(
-                          child: SizedBox(height: AppSpacings.sectionGap),
-                        ),
-                        ..._buildSourceInfoSections(
-                          app,
-                          appsProvider,
-                          certs,
-                          hasAssets,
-                        ),
-                        const SliverToBoxAdapter(
-                          child: SizedBox(height: AppSpacings.sectionGap),
-                        ),
-                        _buildCategorySection(app, appsProvider),
-                        ..._buildReleaseNotesSections(app, settingsProvider),
-                        ..._buildAboutSection(app),
-                        const SliverToBoxAdapter(child: SizedBox(height: 32)),
-                      ],
-                    ),
-                  ),
-                ),
-                Container(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                    border: Border(
-                      top: BorderSide(
-                        color: Theme.of(context).colorScheme.outlineVariant,
+                          _buildHeaderSection(app),
+                          ..._buildRepoRenameSection(app, appsProvider),
+                          const SliverToBoxAdapter(
+                            child: SizedBox(height: AppSpacings.sectionGap),
+                          ),
+                          ..._buildVersionInfoSections(app),
+                          const SliverToBoxAdapter(
+                            child: SizedBox(height: AppSpacings.sectionGap),
+                          ),
+                          ..._buildSourceInfoSections(
+                            app,
+                            appsProvider,
+                            certs,
+                            hasAssets,
+                          ),
+                          const SliverToBoxAdapter(
+                            child: SizedBox(height: AppSpacings.sectionGap),
+                          ),
+                          _buildCategorySection(app, appsProvider),
+                          ..._buildReleaseNotesSections(app, settingsProvider),
+                          ..._buildAboutSection(app),
+                          const SliverToBoxAdapter(child: SizedBox(height: 32)),
+                        ],
                       ),
                     ),
                   ),
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                  child: SafeArea(
-                    top: false,
-                    child: _buildActionsContent(
-                      app,
-                      appsProvider,
-                      settingsProvider,
-                      source,
-                      showAppWebpageFinal,
-                      trackOnly,
-                      areDownloadsRunning,
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                      border: Border(
+                        top: BorderSide(
+                          color: Theme.of(context).colorScheme.outlineVariant,
+                        ),
+                      ),
+                    ),
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                    child: SafeArea(
+                      top: false,
+                      child: _buildActionsContent(
+                        app,
+                        appsProvider,
+                        settingsProvider,
+                        source,
+                        showAppWebpageFinal,
+                        trackOnly,
+                        areDownloadsRunning,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
     );
   }

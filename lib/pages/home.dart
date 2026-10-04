@@ -9,7 +9,6 @@ import 'package:obtainium/components/ui_widgets.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/pages/app.dart';
 import 'package:obtainium/pages/apps.dart';
-import 'package:obtainium/pages/search.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/core/logging/app_logger.dart';
 import 'package:obtainium/providers/settings_provider.dart';
@@ -97,9 +96,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void pushSearch() {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const SearchPage()));
+    NavHelper.pushSearchPage(context);
   }
 
   Future<void> showWelcomeDialogs() async {
@@ -391,8 +388,9 @@ class _HomePageState extends State<HomePage> {
       (p) => p.loadingApps,
     );
 
-    // On TV the add-app and actions affordances live in the list itself (a
-    // FAB would overlap the tiles and is awkward to reach with a remote).
+    // On TV the search, add-app and actions affordances live in the list
+    // itself (a FAB would overlap the tiles and is awkward to reach with a
+    // remote).
     final Widget? fab = isTV
         ? null
         : appsSelecting
@@ -403,20 +401,27 @@ class _HomePageState extends State<HomePage> {
     if (useTwoPane) {
       // Host the FAB in a nested Scaffold around the first pane so it aligns
       // with the app list instead of floating over the detail pane.
-      // TVs give the list the larger share: it is the primary navigation
-      // surface and the detail pane only ever shows one app.
+      // TVs split the screen evenly so that, even 960dp wide, the detail
+      // pane's action row fits all six of its icons plus Update.
       content = Row(
         children: [
           Expanded(
-            flex: isTV ? 3 : 2,
-            child: Scaffold(
-              backgroundColor: Colors.transparent,
-              body: appsPage,
-              floatingActionButton: fab,
+            flex: isTV ? 1 : 2,
+            // On TV only Right leads to the detail pane, never Down off the
+            // bottom of the list.
+            child: Focus(
+              canRequestFocus: false,
+              skipTraversal: true,
+              onKeyEvent: isTV ? tvPaneUpDown : null,
+              child: Scaffold(
+                backgroundColor: Colors.transparent,
+                body: appsPage,
+                floatingActionButton: fab,
+              ),
             ),
           ),
           const VerticalDivider(width: 1),
-          Expanded(flex: isTV ? 2 : 3, child: detailPane),
+          Expanded(flex: isTV ? 1 : 3, child: detailPane),
         ],
       );
     } else {

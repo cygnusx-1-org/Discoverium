@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#FFFFFF</color>
+    <!-- The default light theme's surface, behind the Android TV splash. -->
+    <color name="splash_background">#FEF7FF</color>
 </resources>

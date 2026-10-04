@@ -109,6 +109,10 @@ enum ActionBannerMode { all, updatesOnly, none }
 /// How much vertical space each app row uses in the app list.
 enum AppListDensity { standard, compact, dense }
 
+/// Which repo apps the Search view lists by their `tv` support: everything but
+/// the TV-only ones, everything, or only the ones that run on TV.
+enum TvAppsMode { off, on, tvOnly }
+
 class SettingsProvider with ChangeNotifier {
   SharedPreferences? prefs;
   String? defaultAppDir;
@@ -914,6 +918,20 @@ class SettingsProvider with ChangeNotifier {
 
   set allowCommercialApps(bool val) {
     prefs?.setBool('allowCommercialApps', val);
+    notifyListeners();
+  }
+
+  TvAppsMode get showTvApps {
+    final stored = _getString('showTvApps');
+    if (stored != null && TvAppsMode.values.any((m) => m.name == stored)) {
+      return TvAppsMode.values.byName(stored);
+    }
+    // Until the user picks, list the apps that suit the device.
+    return isTV ? TvAppsMode.tvOnly : TvAppsMode.off;
+  }
+
+  set showTvApps(TvAppsMode val) {
+    prefs?.setString('showTvApps', val.name);
     notifyListeners();
   }
 

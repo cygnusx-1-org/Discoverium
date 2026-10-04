@@ -50,6 +50,26 @@ ThemeData buildObtainiumTheme(
     shape: const WidgetStatePropertyAll(buttonShape),
     minimumSize: const WidgetStatePropertyAll(Size(0, 48)),
     overlayColor: focusOverlay(colorScheme.onPrimary.withValues(alpha: 0.4)),
+    // The overlay above only reads on a solid primary fill; on a tonal button
+    // it is nearly invisible, so a focused tonal button looked unfocused. The
+    // ring matches TvFocusRing. It is drawn here rather than as the button's
+    // `side` because Material paints `side` beneath the focus overlay, which
+    // washed it out; this layer sits above it. Stroked inside the shape and
+    // always present (BorderSide.none when unfocused), so a focused button
+    // keeps its exact size.
+    backgroundBuilder: isTV
+        ? (context, states, child) => DecoratedBox(
+            position: DecorationPosition.foreground,
+            decoration: ShapeDecoration(
+              shape: buttonShape.copyWith(
+                side: states.contains(WidgetState.focused)
+                    ? BorderSide(color: colorScheme.primary, width: 3)
+                    : BorderSide.none,
+              ),
+            ),
+            child: child,
+          )
+        : null,
   );
 
   const inputDecoration = InputDecorationThemeData(
