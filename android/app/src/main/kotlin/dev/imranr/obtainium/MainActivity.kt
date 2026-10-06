@@ -14,6 +14,7 @@ import android.widget.Toast
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
@@ -25,7 +26,12 @@ import java.io.File
 class MainActivity : FlutterActivity() {
     private companion object {
         const val EXTERNAL_INSTALL_CHANNEL = "dev.imranr.obtainium/external_install"
+        const val SAF_ACCESS_CHANNEL = "dev.imranr.obtainium/saf_access"
         const val APK_MIME = "application/vnd.android.package-archive"
+
+        /** Both modes of a picked SAF tree; shared_storage only handles one. */
+        const val TREE_ACCESS_MODES =
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
 
         /** Request code for tracked external-installer launches. */
         const val THIRD_PARTY_INSTALL_REQUEST_CODE = 5108
@@ -191,6 +197,20 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            SAF_ACCESS_CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "persistTreeAccess" -> withTreeUri(call, result) {
+                    contentResolver.takePersistableUriPermission(it, TREE_ACCESS_MODES)
+                }
+                "releaseTreeAccess" -> withTreeUri(call, result) {
+                    contentResolver.releasePersistableUriPermission(it, TREE_ACCESS_MODES)
+                }
+                else -> result.notImplemented()
+            }
+        }
         pendingShareIntent?.let {
             super.onNewIntent(it)
             pendingShareIntent = null
@@ -316,6 +336,29 @@ class MainActivity : FlutterActivity() {
             }
         }
         return targets
+    }
+
+    /**
+     * Runs [action] on the call's SAF tree URI. A [SecurityException] means the
+     * system holds no grant allowing it — e.g. a write-only grant restored after
+     * a reboot cannot be widened to read; only re-picking the tree restores it.
+     */
+    private fun withTreeUri(
+        call: MethodCall,
+        result: MethodChannel.Result,
+        action: (Uri) -> Unit,
+    ) {
+        val uri = call.argument<String>("uri")
+        if (uri.isNullOrEmpty()) {
+            result.error("BAD_ARGS", "Missing uri", null)
+            return
+        }
+        try {
+            action(Uri.parse(uri))
+            result.success(null)
+        } catch (e: SecurityException) {
+            result.error("NO_GRANT", e.message, null)
+        }
     }
 
     /** Exposes a downloaded file through the app's FileProvider as a content:// URI. */

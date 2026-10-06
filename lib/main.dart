@@ -309,6 +309,7 @@ class _ObtainiumState extends State<Obtainium> {
       final notifs = context.read<NotificationsProvider>();
 
       unawaited(_syncWorkManager());
+      unawaited(settingsProvider.upgradeExportDirAccess());
       _handleFirstRun(settingsProvider, appsProvider, context);
 
       if (!_launchByNotifChecked) {

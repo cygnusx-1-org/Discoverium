@@ -726,6 +726,49 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// shared_storage persists only the write mode of a picked tree. Read access
+  /// then survives only until the next reboot, after which [getExportDir]
+  /// finds the directory unreadable and the export dir looks unset (#55).
+  /// This native channel persists and releases both modes instead.
+  static const _safAccessChannel = MethodChannel(
+    'dev.imranr.obtainium/saf_access',
+  );
+
+  Future<void> _persistTreeAccess(Uri uri) => _safAccessChannel
+      .invokeMethod<void>('persistTreeAccess', {'uri': uri.toString()});
+
+  Future<void> _releaseTreeAccess(Uri uri) => _safAccessChannel
+      .invokeMethod<void>('releaseTreeAccess', {'uri': uri.toString()});
+
+  /// Widens a write-only grant on the export directory, as persisted before
+  /// #55 was fixed, to read and write. Only possible until the next reboot
+  /// drops the read mode; after that the directory has to be picked again.
+  Future<void> upgradeExportDirAccess() async {
+    final uriString = _getString('exportDir');
+    // tryParse: this runs unawaited at startup, and an imported settings file
+    // can carry any string here.
+    final uri = uriString == null ? null : Uri.tryParse(uriString);
+    if (uri == null) {
+      return;
+    }
+    try {
+      final grant = ((await saf.persistedUriPermissions()) ?? [])
+          .where((p) => p.uri == uri)
+          .firstOrNull;
+      if (grant == null || grant.isReadPermission) {
+        return;
+      }
+      await _persistTreeAccess(uri);
+      AppLogger.info('Export directory grant upgraded to read and write');
+    } catch (e) {
+      AppLogger.info(
+        'Export directory grant is write-only and cannot be upgraded; '
+        'pick the directory again',
+        error: e,
+      );
+    }
+  }
+
   Future<Uri?> getExportDir() async {
     final uriString = _getString('exportDir');
     if (uriString == null) {
@@ -766,6 +809,14 @@ class SettingsProvider with ChangeNotifier {
         AppLogger.error(e, message: 'Failed to open document tree');
         throw ObtainiumError(tr('noFilePickerAvailable'));
       }
+      if (newOneWayDataSyncDir != null) {
+        try {
+          await _persistTreeAccess(newOneWayDataSyncDir);
+        } catch (e) {
+          // The directory still works until the next reboot, so keep it.
+          AppLogger.error(e, message: 'Failed to persist export dir access');
+        }
+      }
     }
     if (currentOneWayDataSyncDir?.path != newOneWayDataSyncDir?.path) {
       if (newOneWayDataSyncDir == null) {
@@ -780,7 +831,7 @@ class SettingsProvider with ChangeNotifier {
     for (var e in existingSAFPerms) {
       if (e.uri != newOneWayDataSyncDir) {
         try {
-          await saf.releasePersistableUriPermission(e.uri);
+          await _releaseTreeAccess(e.uri);
         } catch (err) {
           // The grant may have already been revoked (e.g. by the OS after an
           // app update); releasing it is best-effort cleanup only.

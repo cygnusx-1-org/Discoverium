@@ -481,7 +481,13 @@ class _ExportSectionState extends State<ExportSection> {
         if (context.mounted) showError(e, context);
       } finally {
         if (mounted) {
-          setState(() => exportInProgress = false);
+          setState(() {
+            exportInProgress = false;
+            // Re-check access even though the 'exportDir' key may be
+            // unchanged: re-picking the same directory after its grant was
+            // lost (#55) makes it usable again without changing the key.
+            _exportDirFuture = null;
+          });
         }
       }
     }
