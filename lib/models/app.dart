@@ -138,6 +138,16 @@ class App {
   final List<MapEntry<String, String>> apkUrls;
   final List<MapEntry<String, String>> otherAssetUrls;
   final int preferredApkIndex;
+
+  /// The name of the APK the user last picked from several, so that a later
+  /// release's APK named like it is picked without asking. Null until then.
+  /// It only stands in for asking while [rememberedApkName] gives it.
+  final String? preferredApkName;
+
+  /// The ABIs read from inside the latest release's APKs whose names do not
+  /// say, by URL (empty for an APK with no native code), so the update check
+  /// does not read the same APKs again to filter them by architecture.
+  final Map<String, List<String>> apkAbis;
   final Map<String, dynamic> additionalSettings;
   final DateTime? lastUpdateCheck;
   final bool pinned;
@@ -175,6 +185,8 @@ class App {
     this.apkUrls = const [],
     this.otherAssetUrls = const [],
     required this.preferredApkIndex,
+    this.preferredApkName,
+    this.apkAbis = const {},
     required this.additionalSettings,
     this.lastUpdateCheck,
     this.pinned = false,
@@ -216,6 +228,13 @@ class App {
     return overrideAuthor ?? author;
   }
 
+  /// [preferredApkName] while the app is set to remember the APK picked from
+  /// several, and null while it is set to ask every time.
+  String? get rememberedApkName =>
+      settings.getBool('rememberChosenApk', defaultValue: true)
+      ? preferredApkName
+      : null;
+
   /// Type-safe accessor for [additionalSettings].
   TypedSettings get settings => TypedSettings(additionalSettings);
 
@@ -233,6 +252,8 @@ class App {
     List<MapEntry<String, String>>? apkUrls,
     List<MapEntry<String, String>>? otherAssetUrls,
     int? preferredApkIndex,
+    Object? preferredApkName = _sentinel,
+    Map<String, List<String>>? apkAbis,
     Map<String, dynamic>? additionalSettings,
     Object? lastUpdateCheck = _sentinel,
     bool? pinned,
@@ -273,6 +294,10 @@ class App {
           otherAssetUrls ??
           List<MapEntry<String, String>>.from(this.otherAssetUrls),
       preferredApkIndex: preferredApkIndex ?? this.preferredApkIndex,
+      preferredApkName: preferredApkName == _sentinel
+          ? this.preferredApkName
+          : preferredApkName as String?,
+      apkAbis: apkAbis ?? this.apkAbis,
       additionalSettings:
           additionalSettings ??
           Map<String, dynamic>.from(this.additionalSettings),
@@ -327,6 +352,12 @@ class App {
           jsonDecode((json['apkUrls'] ?? '[["placeholder", "placeholder"]]')),
         ),
         preferredApkIndex: (json['preferredApkIndex'] ?? -1) as int,
+        preferredApkName: json['preferredApkName'] as String?,
+        apkAbis: json['apkAbis'] == null
+            ? const {}
+            : (json['apkAbis'] as Map<String, dynamic>).map(
+                (url, abis) => MapEntry(url, List<String>.from(abis as List)),
+              ),
         additionalSettings:
             jsonDecode(json['additionalSettings']) as Map<String, dynamic>,
         lastUpdateCheck: json['lastUpdateCheck'] == null
@@ -387,6 +418,8 @@ class App {
     'apkUrls': jsonEncode(stringMapListTo2DList(apkUrls)),
     'otherAssetUrls': jsonEncode(stringMapListTo2DList(otherAssetUrls)),
     'preferredApkIndex': preferredApkIndex,
+    'preferredApkName': preferredApkName,
+    'apkAbis': apkAbis,
     'additionalSettings': jsonEncode(additionalSettings),
     'lastUpdateCheck': lastUpdateCheck?.microsecondsSinceEpoch,
     'pinned': pinned,

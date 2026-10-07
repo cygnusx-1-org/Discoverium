@@ -32,7 +32,15 @@ extension AppsProviderUpdates on AppsProvider {
       currentApp: currentApp,
     );
     newApp = _applyMinimumUpdateAgeHold(currentApp, newApp);
-    if (currentApp.preferredApkIndex < newApp.apkUrls.length) {
+    // The APK named like the one the user picked last time is the same kind
+    // (flavour, ABI) wherever it now sits in the list.
+    final chosenIndex = ApkFilterService.indexOfApkNamedLike(
+      newApp.apkUrls,
+      currentApp.rememberedApkName,
+    );
+    if (chosenIndex != null) {
+      newApp = newApp.copyWith(preferredApkIndex: chosenIndex);
+    } else if (currentApp.preferredApkIndex < newApp.apkUrls.length) {
       newApp = newApp.copyWith(preferredApkIndex: currentApp.preferredApkIndex);
     } else if (newApp.apkUrls.isNotEmpty) {
       newApp = newApp.copyWith(preferredApkIndex: 0);

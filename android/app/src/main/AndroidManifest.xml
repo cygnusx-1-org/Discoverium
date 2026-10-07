@@ -27,6 +27,13 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- obtainium:// links are handled by app_links in HomePage. Left
+                 on, Flutter would also push each link as a named route, which
+                 MaterialApp has no generator for, logging an error per link. -->
+            <meta-data
+              android:name="flutter_deeplinking_enabled"
+              android:value="false"
+              />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>

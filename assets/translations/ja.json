@@ -349,6 +349,7 @@
   "releaseDateAsVersionExplanation": "このオプションは、バージョン検出が正しく機能しないアプリで、リリース日が利用可能な場合にのみ使用する必要があります。",
   "releaseTitleAsVersion": "リリースタイトルをバージョンとして使用する",
   "releaseTooYoungForMinAge": "最新リリースの公開からアップデートの最低経過日数（{}日）が経過しておらず、このソースは古いリリースを提供していません。",
+  "rememberChosenApk": "Remember the APK picked when there are several",
   "remove": "削除",
   "removeAppQuestion": {
     "one": "アプリを削除しますか？",

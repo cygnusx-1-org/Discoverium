@@ -349,6 +349,7 @@
   "releaseDateAsVersionExplanation": "Denne indstilling bør kun bruges til apps, hvor versionsregistrering ikke virker korrekt, men hvor en udgivelsesdato er tilgængelig.",
   "releaseTitleAsVersion": "Brug udgivelsestitel som versionsstreng",
   "releaseTooYoungForMinAge": "The latest release is younger than the minimum update age ({} days) and this source does not provide older releases.",
+  "rememberChosenApk": "Remember the APK picked when there are several",
   "remove": "Fjern",
   "removeAppQuestion": {
     "one": "Fjern app?",

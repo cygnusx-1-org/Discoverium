@@ -44,8 +44,10 @@ import 'package:obtainium/app_sources/tencent.dart';
 import 'package:obtainium/app_sources/uptodown.dart';
 import 'package:obtainium/app_sources/vivoappstore.dart';
 import 'package:obtainium/components/generated_form_model.dart';
+import 'package:obtainium/core/logging/app_logger.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/models/app.dart';
+import 'package:obtainium/providers/apk_version.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/utils/format_utils.dart';
 import 'package:obtainium/services/apk_filter_service.dart';
@@ -279,8 +281,24 @@ class SourceProvider {
     if (apk.apkUrls.isEmpty && !trackOnly) {
       throw NoAPKError()..url = standardUrl;
     }
+    var apkAbis = const <String, List<String>>{};
     if (additionalSettings['autoApkFilterByArch'] == true) {
-      apk = apk.copyWith(apkUrls: await filterApksByArch(apk.apkUrls));
+      final selection = await ApkFilterService.selectApksByAbi(
+        apk.apkUrls,
+        await getDeviceAbis(),
+        known: currentApp?.apkAbis ?? const {},
+        readAbis: trackOnly
+            ? null
+            : (apkUrl) => _readApkAbis(
+                source,
+                standardUrl,
+                apkUrl,
+                additionalSettings,
+                settingsProvider,
+              ),
+      );
+      apk = apk.copyWith(apkUrls: selection.apkUrls);
+      apkAbis = selection.apkAbis;
       if (apk.apkUrls.isEmpty && !trackOnly) {
         throw NoAPKError()..url = standardUrl;
       }
@@ -305,6 +323,8 @@ class SourceProvider {
       preferredApkIndex:
           currentApp?.preferredApkIndex ??
           (apk.apkUrls.isNotEmpty ? apk.apkUrls.length - 1 : 0),
+      preferredApkName: currentApp?.preferredApkName,
+      apkAbis: apkAbis,
       additionalSettings: additionalSettings,
       lastUpdateCheck: DateTime.now(),
       pinned: currentApp?.pinned ?? false,
@@ -324,6 +344,30 @@ class SourceProvider {
           .toList(),
     );
     return source.postProcessApp(finalApp);
+  }
+
+  /// The ABIs read from inside [apk] of the app at [appUrl], or null when it
+  /// cannot be read; filtering by architecture then goes on without it.
+  Future<Set<String>?> _readApkAbis(
+    AppSource source,
+    String appUrl,
+    MapEntry<String, String> apk,
+    Map<String, dynamic> additionalSettings,
+    SettingsProvider settingsProvider,
+  ) async {
+    try {
+      final bytes = await openAppApkOverRanges(
+        source,
+        appUrl,
+        apk,
+        additionalSettings,
+        settingsProvider,
+      );
+      return bytes == null ? null : await readApkAbis(bytes);
+    } catch (e) {
+      AppLogger.debug('Could not read the ABIs of ${apk.key}: $e');
+      return null;
+    }
   }
 
   // Returns errors in [results, errors] instead of throwing them

@@ -1,12 +1,14 @@
 // Reads the version an APK declares for itself — the versionCode and
-// versionName in its compiled AndroidManifest.xml. Over HTTP only the zip's
-// central directory and the manifest are fetched, not the whole APK.
+// versionName in its compiled AndroidManifest.xml — and the ABIs its native
+// libraries are built for. Over HTTP only the zip's central directory and the
+// manifest are fetched, not the whole APK.
 
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
 
 /// The version an APK declares in its own manifest.
@@ -68,39 +70,55 @@ const String _manifestEntryName = 'AndroidManifest.xml';
 /// zip64 archive, there is no manifest at its root (an XAPK, say), or a version
 /// is a resource reference that only the resource table could resolve.
 Future<ApkVersion?> readApkVersion(ApkByteSource source) async {
-  final size = source.length;
-  if (size < _eocdLength) return null;
-  final tailStart = max(0, size - _eocdSearchLength);
-  final tail = await source.read(tailStart, size);
-  final eocd = _findEndOfCentralDirectory(tail);
-  if (eocd < 0) return null;
-  final record = ByteData.sublistView(tail, eocd);
-  final entryCount = record.getUint16(10, Endian.little);
-  final directorySize = record.getUint32(12, Endian.little);
-  final directoryStart = record.getUint32(16, Endian.little);
-  if (entryCount == 0xFFFF ||
-      directoryStart == 0xFFFFFFFF ||
-      directoryStart + directorySize > tailStart + eocd) {
-    return null;
-  }
-  final directory = _CentralDirectory(
-    source,
-    directoryStart,
-    directoryStart + directorySize,
-  );
-  if (directoryStart >= tailStart) {
-    directory.hold(
-      Uint8List.sublistView(
-        tail,
-        directoryStart - tailStart,
-        directoryStart - tailStart + directorySize,
-      ),
-    );
-  }
-  final entry = await directory.find(_manifestEntryName, entryCount);
+  final directory = await _CentralDirectory.open(source);
+  if (directory == null) return null;
+  final entry = await directory.find(_manifestEntryName);
   if (entry == null) return null;
   final manifest = await _readEntry(source, entry);
   return manifest == null ? null : parseManifestVersion(manifest);
+}
+
+/// The ABIs Android installs native libraries for, as `lib/<abi>/` folders.
+const Set<String> _nativeLibraryAbis = {
+  'arm64-v8a',
+  'armeabi-v7a',
+  'armeabi',
+  'x86_64',
+  'x86',
+  'riscv64',
+  'mips64',
+  'mips',
+};
+
+/// Finding the ABIs means reading the whole central directory; one claiming
+/// more than this is not read.
+const int _maxAbiDirectoryLength = 8 * 1024 * 1024;
+
+/// Reads the ABIs [source]'s native libraries are built for, from the
+/// `lib/<abi>/` folders its central directory lists. Empty when it has no
+/// native code, and so runs on any ABI.
+///
+/// Null when it cannot be read this way: the bytes are not a zip, the zip is a
+/// zip64 archive, its directory is too long to be worth reading, or there is
+/// no manifest at its root (an XAPK, say, whose APKs a range read cannot see
+/// into, and which would otherwise pass for one without native code).
+Future<Set<String>?> readApkAbis(ApkByteSource source) async {
+  final directory = await _CentralDirectory.open(source);
+  if (directory == null ||
+      directory._end - directory._start > _maxAbiDirectoryLength) {
+    return null;
+  }
+  final abis = <String>{};
+  var hasManifest = false;
+  final read = await directory.forEachName((name) {
+    if (name == _manifestEntryName) hasManifest = true;
+    if (!name.startsWith('lib/')) return;
+    final slash = name.indexOf('/', 4);
+    if (slash < 0 || slash == name.length - 1) return;
+    final abi = name.substring(4, slash);
+    if (_nativeLibraryAbis.contains(abi)) abis.add(abi);
+  });
+  return read && hasManifest ? abis : null;
 }
 
 /// The offset in [tail] of the end-of-central-directory record: the last
@@ -133,12 +151,49 @@ class _ZipEntry {
 
 /// A zip's central directory, fetched only as far as a lookup needs.
 class _CentralDirectory {
-  _CentralDirectory(this._source, this._start, this._end);
+  _CentralDirectory(this._source, this._start, this._end, this._entryCount);
 
   final ApkByteSource _source;
   final int _start;
   final int _end;
+  final int _entryCount;
   Uint8List _bytes = Uint8List(0);
+
+  /// [source]'s central directory, located from its end-of-central-directory
+  /// record, or null when it is not a zip this can read.
+  static Future<_CentralDirectory?> open(ApkByteSource source) async {
+    final size = source.length;
+    if (size < _eocdLength) return null;
+    final tailStart = max(0, size - _eocdSearchLength);
+    final tail = await source.read(tailStart, size);
+    final eocd = _findEndOfCentralDirectory(tail);
+    if (eocd < 0) return null;
+    final record = ByteData.sublistView(tail, eocd);
+    final entryCount = record.getUint16(10, Endian.little);
+    final directorySize = record.getUint32(12, Endian.little);
+    final directoryStart = record.getUint32(16, Endian.little);
+    if (entryCount == 0xFFFF ||
+        directoryStart == 0xFFFFFFFF ||
+        directoryStart + directorySize > tailStart + eocd) {
+      return null;
+    }
+    final directory = _CentralDirectory(
+      source,
+      directoryStart,
+      directoryStart + directorySize,
+      entryCount,
+    );
+    if (directoryStart >= tailStart) {
+      directory.hold(
+        Uint8List.sublistView(
+          tail,
+          directoryStart - tailStart,
+          directoryStart - tailStart + directorySize,
+        ),
+      );
+    }
+    return directory;
+  }
 
   /// Supplies directory bytes that were already read, from its start.
   void hold(Uint8List bytes) => _bytes = bytes;
@@ -159,10 +214,10 @@ class _CentralDirectory {
     return true;
   }
 
-  Future<_ZipEntry?> find(String name, int entryCount) async {
+  Future<_ZipEntry?> find(String name) async {
     final wanted = utf8.encode(name);
     var position = _start;
-    for (var i = 0; i < entryCount; i++) {
+    for (var i = 0; i < _entryCount; i++) {
       if (!await _holdUpTo(position + _centralEntryLength)) return null;
       final at = position - _start;
       var data = ByteData.sublistView(_bytes);
@@ -192,6 +247,34 @@ class _CentralDirectory {
       position += entryLength;
     }
     return null;
+  }
+
+  /// Calls [visit] with the name of every entry, reading the whole directory.
+  /// False when it is malformed or could not be read to its end.
+  Future<bool> forEachName(void Function(String name) visit) async {
+    if (!await _holdUpTo(_end)) return false;
+    final data = ByteData.sublistView(_bytes);
+    var at = 0;
+    for (var i = 0; i < _entryCount; i++) {
+      if (at + _centralEntryLength > _bytes.length ||
+          data.getUint32(at, Endian.little) != _centralEntrySignature) {
+        return false;
+      }
+      final nameLength = data.getUint16(at + 28, Endian.little);
+      final nameEnd = at + _centralEntryLength + nameLength;
+      if (nameEnd > _bytes.length) return false;
+      visit(
+        utf8.decode(
+          Uint8List.sublistView(_bytes, at + _centralEntryLength, nameEnd),
+          allowMalformed: true,
+        ),
+      );
+      at =
+          nameEnd +
+          data.getUint16(at + 30, Endian.little) +
+          data.getUint16(at + 32, Endian.little);
+    }
+    return true;
   }
 }
 
@@ -479,6 +562,54 @@ class _StringPool {
         _data.getUint16(p + 2 * i, Endian.little),
     ]);
   }
+}
+
+/// Opens [apk], one of the APKs of the app at [appUrl], for reads over byte
+/// ranges. It is resolved exactly as downloadApp resolves it, so the bytes read
+/// are the bytes an install would download.
+///
+/// Null when the server does not serve byte ranges, or when [apk] is a bundle
+/// or archive, which keeps its APKs inside another container that a range read
+/// cannot see into.
+Future<HttpApkByteSource?> openAppApkOverRanges(
+  AppSource source,
+  String appUrl,
+  MapEntry<String, String> apk,
+  Map<String, dynamic> additionalSettings,
+  SettingsProvider settingsProvider,
+) async {
+  if (!apk.key.toLowerCase().endsWith('.apk') &&
+      AppSource.isApkOrContainerFile(
+        apk.key,
+        includeArchives: true,
+        includeTarballs: true,
+      )) {
+    return null;
+  }
+  final settings = await source.buildMergedSettings(
+    additionalSettings,
+    settingsProvider,
+  );
+  final url = await source.assetUrlPrefetchModifier(
+    await source.generalReqPrefetchModifier(apk.value, settings),
+    appUrl,
+    settings,
+  );
+  settings
+    ..['allowInsecure'] = TypedSettings(
+      additionalSettings,
+    ).getBool('allowInsecure')
+    ..['allowInsecureRedirects'] = source.allowInsecureRedirects
+    ..['enableCertificatePinning'] = settingsProvider.enableCertificatePinning;
+  return HttpApkByteSource.open(
+    url,
+    await source.getRequestHeaders(
+      additionalSettings,
+      url,
+      forAPKDownload: true,
+    ),
+    settings,
+  );
 }
 
 /// Reads an APK over HTTP in byte ranges, so only the parts that hold its

@@ -376,6 +376,7 @@
   "releaseNotesLoadFailed": "Versionshinweise konnten nicht geladen werden",
   "releaseTitleAsVersion": "Versionstitel als Versionsstring verwenden",
   "releaseTooYoungForMinAge": "The latest release is younger than the minimum update age ({} days) and this source does not provide older releases.",
+  "rememberChosenApk": "Remember the APK picked when there are several",
   "remove": "Entfernen",
   "removeAppQuestion": {
     "one": "App entfernen?",

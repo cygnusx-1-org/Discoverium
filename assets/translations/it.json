@@ -349,6 +349,7 @@
   "releaseDateAsVersionExplanation": "Questa opzione dovrebbe essere usata solo per le app in cui il rilevamento della versione non funziona correttamente, ma è disponibile una data di rilascio.",
   "releaseTitleAsVersion": "Usa il titolo della versione come stringa di versione",
   "releaseTooYoungForMinAge": "The latest release is younger than the minimum update age ({} days) and this source does not provide older releases.",
+  "rememberChosenApk": "Remember the APK picked when there are several",
   "remove": "Rimuovi",
   "removeAppQuestion": {
     "one": "Rimuovere l'app?",

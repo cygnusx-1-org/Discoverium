@@ -349,6 +349,7 @@
   "releaseDateAsVersionExplanation": "Tiu opcio devas esti uzata nur por apoj, por kiu la versiodetekto ne funkcias ĝuste, sed eldondato estas havebla.",
   "releaseTitleAsVersion": "Use release title as version string",
   "releaseTooYoungForMinAge": "The latest release is younger than the minimum update age ({} days) and this source does not provide older releases.",
+  "rememberChosenApk": "Remember the APK picked when there are several",
   "remove": "Forigi",
   "removeAppQuestion": {
     "one": "Forigi la aplikaĵon?",

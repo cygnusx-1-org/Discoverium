@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:html/parser.dart';
 import 'package:http/http.dart';
@@ -451,21 +450,6 @@ class FDroidRepo extends AppSource {
     return null;
   }
 
-  /// Narrows [versions] to those compatible with this device's ABIs using the
-  /// index's nativecode metadata (entries without nativecode are universal).
-  /// Falls back to the full list when nothing matches.
-  Future<List<_FdroidVersion>> _filterVersionsByArch(
-    List<_FdroidVersion> versions,
-  ) async {
-    if (versions.length <= 1) return versions;
-    if (versions.every((v) => v.nativecode.isEmpty)) return versions;
-    final abis = (await DeviceInfoPlugin().androidInfo).supportedAbis;
-    final compatible = versions
-        .where((v) => v.nativecode.isEmpty || v.nativecode.any(abis.contains))
-        .toList();
-    return compatible.isNotEmpty ? compatible : versions;
-  }
-
   @override
   Future<APKDetails> getLatestAPKDetails(
     String standardUrl,
@@ -495,43 +479,54 @@ class FDroidRepo extends AppSource {
       if (releases.isEmpty) {
         throw NoReleasesError();
       }
+      // The index's nativecode says which ABIs each build is for (none means
+      // it runs on any). Builds this device cannot run are never offered
+      // while it can run some.
+      Set<String> abisOf(_FdroidVersion v) => v.nativecode.toSet();
+      final deviceAbis = releases.any((v) => v.nativecode.isNotEmpty)
+          ? await getDeviceAbis()
+          : const <String>[];
+      final runnable = ApkFilterService.runnableByAbi(
+        releases,
+        abisOf,
+        deviceAbis,
+      );
       List<_FdroidVersion> selected = [];
       if (trySelectingSuggestedVersionCode && entry.marketVersionCode != null) {
-        selected = releases
-            .where((v) => v.versionCode == entry.marketVersionCode)
-            .toList();
+        selected = ApkFilterService.runnableSuggestion(
+          releases
+              .where((v) => v.versionCode == entry.marketVersionCode)
+              .toList(),
+          runnable,
+          (v) => v.versionName,
+        );
       }
-      var candidates = releases;
+      var candidates = runnable;
       if (selected.isEmpty && trySelectingSuggestedVersionCode) {
         // index-v2 has no suggested version code; the toggle instead means
         // "prefer stable" — drop builds marked as non-stable (e.g. Beta).
-        final nonStable = releases
+        final nonStable = runnable
             .where(
               (v) =>
                   v.releaseChannels.isNotEmpty &&
                   !v.releaseChannels.any((c) => c.toLowerCase() == 'stable'),
             )
             .toList();
-        if (nonStable.isNotEmpty && nonStable.length < releases.length) {
-          candidates = releases.where((v) => !nonStable.contains(v)).toList();
+        if (nonStable.isNotEmpty && nonStable.length < runnable.length) {
+          candidates = runnable.where((v) => !nonStable.contains(v)).toList();
         }
       }
       if (selected.isEmpty) {
-        if (pickHighestVersionCode) {
-          selected = [candidates.first];
-        } else {
-          final latestVersionName = candidates.first.versionName;
-          selected = candidates
-              .where((v) => v.versionName == latestVersionName)
-              .toList();
-        }
+        final latestVersionName = candidates.first.versionName;
+        selected = candidates
+            .where((v) => v.versionName == latestVersionName)
+            .toList();
       }
-      if (selected.isEmpty) {
-        throw NoReleasesError();
+      if (additionalSettings['autoApkFilterByArch'] == true) {
+        selected = ApkFilterService.selectByAbi(selected, abisOf, deviceAbis);
       }
-      selected = await _filterVersionsByArch(selected);
-      if (selected.isEmpty) {
-        throw NoReleasesError();
+      if (pickHighestVersionCode) {
+        selected = [selected.first];
       }
       return APKDetails(
         selected.first.versionName,

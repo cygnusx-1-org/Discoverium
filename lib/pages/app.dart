@@ -415,7 +415,19 @@ class _AppPageState extends State<AppPage> {
       originalSettings.forEach((key, value) {
         savedValues.putIfAbsent(key, () => value);
       });
-      app.app = app.app.copyWith(additionalSettings: savedValues);
+      // Turning off remembering the APK picked from several forgets the
+      // pick, so the next install asks again.
+      final forgetChosenApk =
+          TypedSettings(
+            originalSettings,
+          ).getBool('rememberChosenApk', defaultValue: true) &&
+          !TypedSettings(
+            savedValues,
+          ).getBool('rememberChosenApk', defaultValue: true);
+      app.app = app.app.copyWith(
+        additionalSettings: savedValues,
+        preferredApkName: forgetChosenApk ? null : app.app.preferredApkName,
+      );
       if (s?.enforceTrackOnly == true) {
         app.app = app.app.copyWith(
           additionalSettings: Map<String, dynamic>.from(

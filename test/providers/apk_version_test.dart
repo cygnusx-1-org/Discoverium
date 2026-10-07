@@ -151,4 +151,61 @@ void main() {
       expect(await readApkVersion(_MemoryApk(Uint8List(10))), isNull);
     });
   });
+
+  group('readApkAbis', () {
+    ArchiveFile manifest() => _deflated('AndroidManifest.xml', [0]);
+    ArchiveFile library(String abi) => _stored('lib/$abi/libapp.so', [1]);
+
+    test('reads the ABIs of its native libraries', () async {
+      final apk = _apk([
+        manifest(),
+        _stored('classes.dex', [2]),
+        library('arm64-v8a'),
+        _stored('lib/arm64-v8a/libflutter.so', [3]),
+        library('armeabi-v7a'),
+      ]);
+      expect(await readApkAbis(apk), {'arm64-v8a', 'armeabi-v7a'});
+    });
+
+    test('finds no ABI in an APK with no native code', () async {
+      final apk = _apk([
+        manifest(),
+        _stored('classes.dex', [2]),
+      ]);
+      expect(await readApkAbis(apk), isEmpty);
+    });
+
+    test('ignores lib/ entries that are not native libraries', () async {
+      final apk = _apk([
+        manifest(),
+        _stored('lib/README', [2]),
+        _stored('lib/x86_64', [3]),
+        _stored('lib/plugins/libfoo.so', [4]),
+      ]);
+      expect(await readApkAbis(apk), isEmpty);
+    });
+
+    test('walks a central directory longer than one read', () async {
+      final apk = _apk([
+        manifest(),
+        for (var i = 0; i < 4000; i++)
+          _stored('res/drawable/icon_$i.png', [i % 256]),
+        library('x86_64'),
+      ]);
+      expect(await readApkAbis(apk), {'x86_64'});
+    });
+
+    test('gives up on a bundle, whose APKs it cannot see into', () async {
+      final apk = _apk([
+        _deflated('manifest.json', utf8.encode('{}')),
+        _stored('org.example.fixture.apk', List.filled(128, 1)),
+        _stored('config.arm64_v8a.apk', List.filled(128, 1)),
+      ]);
+      expect(await readApkAbis(apk), isNull);
+    });
+
+    test('gives up on bytes that are not a zip', () async {
+      expect(await readApkAbis(_MemoryApk(Uint8List(100000))), isNull);
+    });
+  });
 }

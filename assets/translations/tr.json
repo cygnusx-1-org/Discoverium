@@ -349,6 +349,7 @@
   "releaseDateAsVersionExplanation": "Bu, yalnızca sürüm algılamasının düzgün çalışmadığı ve yayın tarihi mevcut olan uygulamalar için kullanılmalıdır.",
   "releaseTitleAsVersion": "Yayın başlığını sürüm olarak kullan",
   "releaseTooYoungForMinAge": "The latest release is younger than the minimum update age ({} days) and this source does not provide older releases.",
+  "rememberChosenApk": "Remember the APK picked when there are several",
   "remove": "Kaldır",
   "removeAppQuestion": {
     "one": "Uygulama kaldırılsın mı?",

@@ -243,6 +243,7 @@ class SearchPageState extends State<SearchPage> {
               .map((e) => e.value)
               .toList()
               .indexOf(apkUrl.value),
+          preferredApkName: app.apkUrls.length > 1 ? apkUrl.key : null,
         );
         if (!mounted) throw ObtainiumError(tr('cancelled'));
         final downloadedArtifact = await appsProvider.downloadApp(

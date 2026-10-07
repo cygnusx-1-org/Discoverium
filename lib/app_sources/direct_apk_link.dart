@@ -19,6 +19,7 @@ class DirectAPKLink extends AppSource {
       'matchGroupToUse',
       'apkFilterRegEx',
       'autoApkFilterByArch',
+      'rememberChosenApk',
     ];
   }
 

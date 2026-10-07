@@ -356,6 +356,7 @@
   "releaseDateAsVersionExplanation": "Эта настройка должна использоваться только для приложений, в которых определение версии не работает правильно, но имеется дата выпуска",
   "releaseTitleAsVersion": "Использовать название выпуска в качестве версии",
   "releaseTooYoungForMinAge": "Последняя версия новее минимального возраста обновления ({} дн.) и данный источник не предоставляет более старые выпуски",
+  "rememberChosenApk": "Remember the APK picked when there are several",
   "remove": "Удалить",
   "removeAppQuestion": {
     "one": "Удалить приложение?",

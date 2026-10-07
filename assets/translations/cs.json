@@ -356,6 +356,7 @@
   "releaseDateAsVersionExplanation": "Tato možnost by měla být použita pouze u aplikace, kde detekce verzí nefunguje správně, ale je k dispozici datum vydání.",
   "releaseTitleAsVersion": "Použít název vydání jako řetězec verze",
   "releaseTooYoungForMinAge": "The latest release is younger than the minimum update age ({} days) and this source does not provide older releases.",
+  "rememberChosenApk": "Remember the APK picked when there are several",
   "remove": "Odebrat",
   "removeAppQuestion": {
     "one": "Odstranit aplikaci?",

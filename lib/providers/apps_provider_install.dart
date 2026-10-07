@@ -457,7 +457,12 @@ extension AppsProviderInstall on AppsProvider {
   /// device/app capability (single APK plus the active installer's own rules).
   /// Independent of the background-update setting.
   Future<bool> canInstallSilently(App app) async {
-    if (app.apkUrls.length > 1) {
+    if (app.apkUrls.length > 1 &&
+        ApkFilterService.indexOfApkNamedLike(
+              app.apkUrls,
+              app.rememberedApkName,
+            ) ==
+            null) {
       AppLogger.info(
         'App will not be installed silently: multiple APK URLs require manual selection: ${app.id}',
       );
@@ -991,8 +996,17 @@ extension AppsProviderInstall on AppsProvider {
     }
     final List<String> archs =
         (await DeviceInfoPlugin().androidInfo).supportedAbis;
-
-    if ((urlsToSelectFrom.length > 1 || evenIfSingleChoice) &&
+    // An APK named like the one the user picked from an earlier release is
+    // the same kind, so it is not asked about again.
+    final chosenIndex = pickAnyAsset || evenIfSingleChoice
+        ? null
+        : ApkFilterService.indexOfApkNamedLike(
+            urlsToSelectFrom,
+            app.rememberedApkName,
+          );
+    if (chosenIndex != null) {
+      appFileUrl = urlsToSelectFrom[chosenIndex];
+    } else if ((urlsToSelectFrom.length > 1 || evenIfSingleChoice) &&
         context != null &&
         context.mounted) {
       appFileUrl = await showDialog(
@@ -1078,8 +1092,20 @@ extension AppsProviderInstall on AppsProvider {
         final int urlInd = apps[id]!.app.apkUrls.indexWhere(
           (e) => e.value == url,
         );
-        if (urlInd >= 0 && urlInd != apps[id]!.app.preferredApkIndex) {
-          apps[id]!.app = apps[id]!.app.copyWith(preferredApkIndex: urlInd);
+        // Only a choice made in the foreground is the user's: without a
+        // context the preferred APK is taken unasked, and recording it would
+        // let it be installed silently from then on.
+        final chosenName =
+            apps[id]!.app.apkUrls.length > 1 && context?.mounted == true
+            ? apkUrl.key
+            : apps[id]!.app.preferredApkName;
+        if (urlInd >= 0 &&
+            (urlInd != apps[id]!.app.preferredApkIndex ||
+                chosenName != apps[id]!.app.preferredApkName)) {
+          apps[id]!.app = apps[id]!.app.copyWith(
+            preferredApkIndex: urlInd,
+            preferredApkName: chosenName,
+          );
           await saveApps([apps[id]!.app]);
         }
         if (context != null ||

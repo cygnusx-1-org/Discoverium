@@ -349,6 +349,7 @@
   "releaseDateAsVersionExplanation": "此选项应该仅用于无法进行版本检测但能够获取发行日期的应用。",
   "releaseTitleAsVersion": "将发行标题作为版本字符串",
   "releaseTooYoungForMinAge": "最新版本发布至今不足最小更新间隔（{} 天），且此来源不提供更旧的版本。",
+  "rememberChosenApk": "Remember the APK picked when there are several",
   "remove": "删除",
   "removeAppQuestion": {
     "one": "是否删除应用？",

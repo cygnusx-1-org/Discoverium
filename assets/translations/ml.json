@@ -349,6 +349,7 @@
   "releaseDateAsVersionExplanation": "പതിപ്പ് കണ്ടെത്തൽ ശരിയായി പ്രവർത്തിക്കാത്തതും എന്നാൽ റിലീസ് തീയതി ലഭ്യമായതുമായ ആപ്പുകൾക്ക് മാത്രമേ ഈ ഓപ്ഷൻ ഉപയോഗിക്കാവൂ.",
   "releaseTitleAsVersion": "റിലീസ് ശീർഷകം പതിപ്പ് സ്ട്രിംഗായി ഉപയോഗിക്കുക",
   "releaseTooYoungForMinAge": "The latest release is younger than the minimum update age ({} days) and this source does not provide older releases.",
+  "rememberChosenApk": "Remember the APK picked when there are several",
   "remove": "നീക്കം ചെയ്യുക",
   "removeAppQuestion": {
     "one": "ആപ്പ് നീക്കം ചെയ്യണോ?",

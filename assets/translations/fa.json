@@ -349,6 +349,7 @@
   "releaseDateAsVersionExplanation": "این گزینه فقط باید برای برنامه هایی استفاده شود که تشخیص نسخه به درستی کار نمی کند، اما تاریخ انتشار در دسترس است.",
   "releaseTitleAsVersion": "از عنوان انتشار به عنوان رشته نسخه استفاده کنید",
   "releaseTooYoungForMinAge": "The latest release is younger than the minimum update age ({} days) and this source does not provide older releases.",
+  "rememberChosenApk": "Remember the APK picked when there are several",
   "remove": "حذف",
   "removeAppQuestion": {
     "one": "برنامه حذف شود؟",

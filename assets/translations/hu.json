@@ -348,6 +348,7 @@
   "releaseDateAsVersionExplanation": "Ezt a beállítást csak olyan alkalmazásoknál szabad használni, ahol a verziófelismerés nem működik megfelelően, de elérhető a kiadás dátuma.",
   "releaseTitleAsVersion": "Kiadás címének használata verzió-karakterláncként",
   "releaseTooYoungForMinAge": "A legutóbbi kiadás frissebb mint a megengedett késleltetési korlát ({} nap), és ez a forrás nem biztosít régebbi kiadásokat.",
+  "rememberChosenApk": "Remember the APK picked when there are several",
   "remove": "Eltávolítás",
   "removeAppQuestion": {
     "one": "Biztosan eltávolítja az alkalmazást?",

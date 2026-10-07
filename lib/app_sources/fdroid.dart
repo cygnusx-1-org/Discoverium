@@ -87,15 +87,21 @@ class FDroid extends AppSource {
         throw NoReleasesError();
       }
       final String host = Uri.parse(standardUrl).host;
+      final res = await sourceRequest(
+        'https://$host/api/v1/packages/$appId',
+        additionalSettings,
+      );
+      final nativecodes = _hasSeveralBuildsOfAVersion(res)
+          ? await _fetchNativecodes(host, appId, additionalSettings)
+          : null;
       var details = getAPKUrlsFromFDroidPackagesAPIResponse(
-        await sourceRequest(
-          'https://$host/api/v1/packages/$appId',
-          additionalSettings,
-        ),
+        res,
         'https://$host/repo/$appId',
         standardUrl,
         name,
         additionalSettings: additionalSettings,
+        nativecodes: nativecodes,
+        deviceAbis: nativecodes == null ? const [] : await getDeviceAbis(),
       );
       if (!hostChanged) {
         try {
@@ -203,12 +209,75 @@ class FDroid extends AppSource {
     }
   }
 
+  /// Whether the packages API lists more than one build of some version, as
+  /// it does for an app built separately for each ABI.
+  bool _hasSeveralBuildsOfAVersion(Response res) {
+    try {
+      final packages = jsonDecode(res.body)['packages'] as List<dynamic>;
+      final versionNames = packages.map((p) => p['versionName']).toList();
+      return versionNames.toSet().length < versionNames.length;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// The native code of each build on the app's page, by versionCode, or null
+  /// when the page cannot be read.
+  Future<Map<int, List<String>>?> _fetchNativecodes(
+    String host,
+    String appId,
+    Map<String, dynamic> additionalSettings,
+  ) async {
+    try {
+      final res = await sourceRequest(
+        'https://$host/packages/$appId/',
+        additionalSettings,
+      );
+      if (res.statusCode != 200) return null;
+      final nativecodes = parseNativecodes(res.body);
+      return nativecodes.isEmpty ? null : nativecodes;
+    } catch (e) {
+      AppLogger.debug('Could not read the native code of $appId: $e');
+      return null;
+    }
+  }
+
+  /// The ABIs each build listed on an F-Droid app page is for, by versionCode:
+  /// empty for a build with no native code, which runs on any ABI.
+  ///
+  /// The packages API leaves this out, so without it the builds of a version
+  /// for different ABIs differ only in a versionCode that follows no standard
+  /// — and F-Droid's suggested one is often for x86_64 (#13).
+  static Map<int, List<String>> parseNativecodes(String html) {
+    final nativecodes = <int, List<String>>{};
+    for (final build in parse(html).querySelectorAll('.package-version')) {
+      // The header reads "Version 26.0.0 (26000004)".
+      final versionCode = RegExp(r'\((\d+)\)')
+          .allMatches(
+            build.querySelector('.package-version-header')?.text ?? '',
+          )
+          .map((m) => int.tryParse(m[1]!))
+          .lastOrNull;
+      if (versionCode == null) continue;
+      nativecodes[versionCode] = [
+        for (final code in build.querySelectorAll('.package-nativecode'))
+          if (code.text.trim().isNotEmpty) code.text.trim(),
+      ];
+    }
+    return nativecodes;
+  }
+
+  /// [nativecodes] gives the ABIs of the builds it knows, by versionCode, for
+  /// telling the builds of one version apart on a device whose ABIs are
+  /// [deviceAbis].
   APKDetails getAPKUrlsFromFDroidPackagesAPIResponse(
     Response res,
     String apkUrlPrefix,
     String standardUrl,
     String sourceName, {
     Map<String, dynamic> additionalSettings = const {},
+    Map<int, List<String>>? nativecodes,
+    List<String> deviceAbis = const [],
   }) {
     final autoSelectHighestVersionCode =
         additionalSettings['autoSelectHighestVersionCode'] == true;
@@ -241,6 +310,12 @@ class FDroid extends AppSource {
       if (releases.isEmpty) {
         throw NoReleasesError();
       }
+      Set<String>? abisOf(dynamic release) =>
+          nativecodes?[int.tryParse('${release['versionCode']}')]?.toSet();
+      // Builds this device cannot run are never offered while it can run
+      // some.
+      final allReleases = releases;
+      releases = ApkFilterService.runnableByAbi(releases, abisOf, deviceAbis);
       String? version;
       Iterable<dynamic> releaseChoices = [];
       // Grab the versionCode suggested if the user chose to do that
@@ -248,13 +323,17 @@ class FDroid extends AppSource {
       if (trySelectingSuggestedVersionCode &&
           response['suggestedVersionCode'] != null &&
           filterVersionsByRegEx == null) {
-        final suggestedReleases = releases.where(
+        final suggestedReleases = allReleases.where(
           (element) =>
               element['versionCode'] == response['suggestedVersionCode'],
         );
         if (suggestedReleases.isNotEmpty) {
-          releaseChoices = suggestedReleases;
           version = suggestedReleases.first['versionName'];
+          releaseChoices = ApkFilterService.runnableSuggestion(
+            suggestedReleases.toList(),
+            releases,
+            (release) => release['versionName'],
+          );
         }
       }
       // Apply the release filter if any
@@ -281,6 +360,13 @@ class FDroid extends AppSource {
       if (releaseChoices.isEmpty) {
         releaseChoices = releases.where(
           (element) => element['versionName'] == version,
+        );
+      }
+      if (additionalSettings['autoApkFilterByArch'] == true) {
+        releaseChoices = ApkFilterService.selectByAbi(
+          releaseChoices.toList(),
+          abisOf,
+          deviceAbis,
         );
       }
       // For the remaining releases, use the toggles to auto-select one if possible

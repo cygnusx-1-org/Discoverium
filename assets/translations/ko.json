@@ -349,6 +349,7 @@
   "releaseDateAsVersionExplanation": "이 옵션은 버전 감지가 올바르게 작동하지 않지만 릴리스 날짜가 있는 앱에만 사용해야 합니다.",
   "releaseTitleAsVersion": "릴리스 제목을 버전 문자열로 사용",
   "releaseTooYoungForMinAge": "The latest release is younger than the minimum update age ({} days) and this source does not provide older releases.",
+  "rememberChosenApk": "Remember the APK picked when there are several",
   "remove": "제거",
   "removeAppQuestion": {
     "one": "앱을 제거하시겠습니까?",

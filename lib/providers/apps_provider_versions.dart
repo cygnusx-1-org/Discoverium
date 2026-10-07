@@ -86,45 +86,12 @@ extension AppsProviderVersions on AppsProvider {
   /// The version [app]'s preferred APK declares, read over byte ranges. Null
   /// when the server does not serve ranges or the APK cannot be read that way.
   Future<ApkVersion?> _readApkVersionOverRanges(App app) async {
-    final apk = app.apkUrls[app.preferredApkIndex];
-    // A bundle or archive keeps its APKs inside another container, which a
-    // range read cannot see into.
-    if (!apk.key.toLowerCase().endsWith('.apk') &&
-        AppSource.isApkOrContainerFile(
-          apk.key,
-          includeArchives: true,
-          includeTarballs: true,
-        )) {
-      return null;
-    }
-    final source = SourceProvider().getSource(
+    final bytes = await openAppApkOverRanges(
+      SourceProvider().getSource(app.url, overrideSource: app.overrideSource),
       app.url,
-      overrideSource: app.overrideSource,
-    );
-    // Resolved exactly as downloadApp resolves it, so the bytes read are the
-    // bytes an install would download.
-    final settings = await source.buildMergedSettings(
+      app.apkUrls[app.preferredApkIndex],
       app.additionalSettings,
       settingsProvider,
-    );
-    final url = await source.assetUrlPrefetchModifier(
-      await source.generalReqPrefetchModifier(apk.value, settings),
-      app.url,
-      settings,
-    );
-    settings
-      ..['allowInsecure'] = app.settings.getBool('allowInsecure')
-      ..['allowInsecureRedirects'] = source.allowInsecureRedirects
-      ..['enableCertificatePinning'] =
-          settingsProvider.enableCertificatePinning;
-    final bytes = await HttpApkByteSource.open(
-      url,
-      await source.getRequestHeaders(
-        app.additionalSettings,
-        url,
-        forAPKDownload: true,
-      ),
-      settings,
     );
     if (bytes == null) return null;
     final ApkVersion? version;

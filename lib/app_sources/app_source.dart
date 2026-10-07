@@ -265,6 +265,13 @@ abstract class AppSource {
       ),
     ],
     [
+      GeneratedFormSwitch(
+        'rememberChosenApk',
+        label: tr('rememberChosenApk'),
+        value: true,
+      ),
+    ],
+    [
       GeneratedFormSlider(
         'minimumUpdateAgeDays',
         [
