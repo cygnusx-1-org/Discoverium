@@ -13,10 +13,10 @@ void main() {
 
   const unreachableUrl = 'http://127.0.0.1:1/app.apk';
 
-  final addFab = find.widgetWithText(FloatingActionButton, 'Add');
+  final searchFab = find.widgetWithText(FloatingActionButton, 'Search');
 
   Future<void> enterUnreachableUrl(WidgetTester tester) async {
-    await tester.tap(addFab);
+    await openAddApp(tester);
     final urlField = find.widgetWithText(TextField, 'App source URL');
     await pumpUntil(tester, urlField);
     await tester.enterText(urlField, unreachableUrl);
@@ -37,7 +37,7 @@ void main() {
 
     await clearAppData();
     await launchApp(tester, prefs: const {'allowAddingAppsWithoutCheck': true});
-    await pumpUntil(tester, addFab);
+    await pumpUntil(tester, searchFab);
     await enterUnreachableUrl(tester);
 
     await pumpUntil(
@@ -65,7 +65,7 @@ void main() {
 
     await clearAppData();
     await launchApp(tester);
-    await pumpUntil(tester, addFab);
+    await pumpUntil(tester, searchFab);
     await enterUnreachableUrl(tester);
 
     await pumpUntil(

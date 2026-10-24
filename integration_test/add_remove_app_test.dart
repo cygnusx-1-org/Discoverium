@@ -23,8 +23,7 @@ void main() {
     await pumpUntil(tester, find.text('No apps'));
 
     // Open Add App and enter the direct link.
-    await tester.tap(find.text('Add'));
-    await pumpUntil(tester, find.text('Add app'));
+    await openAddApp(tester);
     await tester.enterText(
       find.byType(TextFormField).first,
       '$e2eBaseUrl/testapp-v2.apk',
@@ -97,6 +96,14 @@ void main() {
       () => !appsProvider.apps.containsKey(e2eTestPackageId),
       reason: 'app removed',
     );
+    // The detail page replaced Add App, so removing the app returns to the
+    // Search page Add App was opened from.
+    await pumpUntil(
+      tester,
+      find.widgetWithText(FloatingActionButton, 'Add'),
+      reason: 'search page',
+    );
+    await pressBack(tester);
     await pumpUntil(tester, find.text('No apps'));
 
     restoreErrorWidgetBuilder();

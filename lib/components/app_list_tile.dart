@@ -403,7 +403,6 @@ class AppListTile extends StatelessWidget {
       valueListenable: appInMemory.downloadProgressNotifier,
       builder: (context, downloadProgress, child) {
         final tileChild = Semantics(
-          label: appInMemory.name,
           customSemanticsActions: <CustomSemanticsAction, VoidCallback>{
             if (canInstall || canUpdate)
               CustomSemanticsAction(
@@ -1097,7 +1096,7 @@ class _VersionLabel extends StatelessWidget {
     // The version pair gets a line to itself. Sharing one with the date would
     // reserve the date's width up front, wrapping a pair that had room for the
     // sake of something that did not need to be beside it.
-    return Column(
+    Widget content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         versionText,
@@ -1105,6 +1104,24 @@ class _VersionLabel extends StatelessWidget {
         Align(alignment: AlignmentDirectional.centerEnd, child: changes),
       ],
     );
+
+    if (showChangesFn != null) {
+      // TalkBack reads the version and date as one changelog target, separate
+      // from the row's own details action.
+      final semanticLabel = [
+        installedVersionText(app),
+        changesLabel(app, true),
+      ].where((part) => part.isNotEmpty).join(' ');
+      content = Semantics(
+        container: true,
+        button: true,
+        label: semanticLabel,
+        excludeSemantics: true,
+        onTap: showChangesFn,
+        child: content,
+      );
+    }
+    return content;
   }
 
   bool isVersionUpdate(App app) => appHasOfferableUpdate(app, settingsProvider);

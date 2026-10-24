@@ -12,7 +12,7 @@ import 'e2e_helpers.dart';
 ///
 /// Requires the runner's fixtures (`testapp-badkey-v2.apk` is the same package
 /// and version as `testapp-v2.apk` but signed with a different keystore) and
-/// `com.obtainium.e2etest` pre-installed at v1 with Obtainium as its installer.
+/// `com.obtainium.e2etest` pre-installed at v1 with Discoverium as its installer.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 

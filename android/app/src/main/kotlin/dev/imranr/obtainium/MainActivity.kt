@@ -23,7 +23,10 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.io.ByteArrayInputStream
 import java.io.File
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
 
 /**
  * The native surface is intentionally tiny: the capabilities below 
@@ -35,6 +38,7 @@ class MainActivity : FlutterActivity() {
         const val EXTERNAL_INSTALL_CHANNEL = "dev.imranr.obtainium/external_install"
         const val SAF_ACCESS_CHANNEL = "dev.imranr.obtainium/saf_access"
         const val DOCUMENT_TREE_CHANNEL = "dev.imranr.obtainium/document_tree"
+        const val CERTIFICATE_CHANNEL = "dev.imranr.obtainium/certificate"
         const val APK_MIME = "application/vnd.android.package-archive"
 
         /** Both modes of a picked SAF tree; shared_storage only handles one. */
@@ -230,6 +234,29 @@ class MainActivity : FlutterActivity() {
                 }
                 "releaseTreeAccess" -> withTreeUri(call, result) {
                     contentResolver.releasePersistableUriPermission(it, TREE_ACCESS_MODES)
+                }
+                else -> result.notImplemented()
+            }
+        }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            CERTIFICATE_CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "parseCertificates" -> {
+                    val ders = call.argument<List<*>>("ders")
+                        ?.mapNotNull { it as? ByteArray }
+                    if (ders == null || ders.isEmpty()) {
+                        result.error("BAD_ARGS", "Missing certificate data", null)
+                    } else {
+                        runOffThread(
+                            work = { parseCertificates(ders) },
+                            onSuccess = { result.success(it) },
+                            onError = {
+                                result.error("CERT_PARSE_FAILED", it.message, null)
+                            },
+                        )
+                    }
                 }
                 else -> result.notImplemented()
             }
@@ -482,6 +509,24 @@ class MainActivity : FlutterActivity() {
                 runOnUiThread { onError(e) }
             }
         }.start()
+    }
+
+    /** Parses DER certificates using the platform X.509 implementation. */
+    private fun parseCertificates(ders: List<ByteArray>): List<Map<String, Any?>> {
+        val factory = CertificateFactory.getInstance("X.509")
+        return ders.map { der ->
+            val certificate = factory.generateCertificate(
+                ByteArrayInputStream(der),
+            ) as X509Certificate
+            mapOf(
+                "der" to der,
+                "subject" to certificate.subjectX500Principal.name,
+                "issuer" to certificate.issuerX500Principal.name,
+                "notBefore" to certificate.notBefore.time,
+                "notAfter" to certificate.notAfter.time,
+                "isCA" to (certificate.basicConstraints >= 0),
+            )
+        }
     }
 
     /**

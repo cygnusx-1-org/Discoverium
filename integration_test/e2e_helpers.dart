@@ -40,6 +40,9 @@ Future<void> seedPrefs({Map<String, Object> overrides = const {}}) async {
     'checkOnStart': false,
     'updateInterval': 0,
     'enableBackgroundUpdates': false,
+    // Discoverium waits for a locked screen before installing in the
+    // background by default; the suites install with the screen on.
+    'bgUpdatesWhileLockedOnly': false,
     'forcedLocale': 'en',
     ...overrides,
   });
@@ -305,6 +308,33 @@ bool focusIsOnText(String text) {
 Future<void> pressBack(WidgetTester tester) async {
   await tester.binding.handlePopRoute();
   await tester.pump(const Duration(milliseconds: 400));
+}
+
+/// Opens Add App from the app list. Discoverium's app list leads with Search,
+/// and Add App is the Search page's Add button.
+Future<void> openAddApp(WidgetTester tester) async {
+  await tester.tap(find.widgetWithText(FloatingActionButton, 'Search'));
+  final addFab = find.widgetWithText(FloatingActionButton, 'Add');
+  await pumpUntil(tester, addFab, reason: 'search page');
+  await tester.tap(addFab);
+  await pumpUntil(tester, find.text('Add app'), reason: 'add app page');
+}
+
+/// Returns from Add App to the app list, through the Search page it was
+/// opened from.
+Future<void> closeAddApp(WidgetTester tester) async {
+  await pressBack(tester);
+  await pumpUntil(
+    tester,
+    find.widgetWithText(FloatingActionButton, 'Add'),
+    reason: 'search page',
+  );
+  await pressBack(tester);
+  await pumpUntil(
+    tester,
+    find.widgetWithText(FloatingActionButton, 'Search'),
+    reason: 'app list',
+  );
 }
 
 /// Whether the current primary focus lives inside a widget of type [T].

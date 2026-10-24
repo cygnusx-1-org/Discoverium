@@ -14,6 +14,7 @@ import 'package:obtainium/core/logging/app_logger.dart';
 import 'package:obtainium/installers/shizuku_installer.dart';
 import 'package:obtainium/main.dart';
 import 'package:obtainium/pages/import_export.dart';
+import 'package:obtainium/pages/pinned_certificates.dart';
 import 'package:obtainium/utils/nav_helper.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:android_package_manager/android_package_manager.dart'
@@ -29,6 +30,11 @@ import 'package:obtainium/utils/locale_utils.dart';
 import 'package:obtainium/utils/native_features.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher_string.dart';
+
+const _settingsSectionPadding = EdgeInsets.only(
+  top: AppSpacings.xl,
+  bottom: AppSpacings.sm,
+);
 
 /// Which settings screen to render. `null` shows the top-level menu.
 enum SettingsSection {
@@ -259,6 +265,36 @@ class _SettingsPageState extends State<SettingsPage> {
     color: Theme.of(context).colorScheme.surfaceContainerHighest,
     child: field,
   );
+
+  Widget _settingsRow(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required VoidCallback onTap,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+    return CardTile(
+      padding: EdgeInsets.zero,
+      child: TvFocusRing(
+        borderRadius: AppRadii.small,
+        child: ListTile(
+          contentPadding: AppPaddings.rowHorizontal,
+          leading: Icon(icon, color: cs.primary),
+          title: Text(title),
+          subtitle: subtitle == null ? null : Text(subtitle),
+          trailing: Icon(Icons.chevron_right, color: cs.onSurfaceVariant),
+          onTap: () {
+            context.read<SettingsProvider>().selectionClick();
+            onTap();
+          },
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(AppRadii.small),
+          ),
+        ),
+      ),
+    );
+  }
 
   /// The source-code, wiki and logs shortcuts shown under the settings menu.
   Widget _buildFooter(BuildContext context) => SliverToBoxAdapter(
@@ -714,6 +750,7 @@ class _SettingsPageState extends State<SettingsPage> {
   ) {
     final settingsProvider = context.read<SettingsProvider>();
     return [
+      SectionHeader(tr('backgroundChecks'), padding: _settingsSectionPadding),
       _fieldTile(
         context,
         TvDropdownMenu<int>(
@@ -826,10 +863,20 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
       ],
-      ToggleTile(
-        label: tr('enableCertificatePinning'),
-        value: settingsProvider.enableCertificatePinning,
-        onChanged: (value) => settingsProvider.enableCertificatePinning = value,
+      SectionHeader(tr('updateChecks'), padding: _settingsSectionPadding),
+      _settingsRow(
+        context,
+        icon: Icons.verified_user_outlined,
+        title: tr('certificatePinning'),
+        subtitle: tr(
+          settingsProvider.enableCertificatePinning ? 'enabled' : 'disabled',
+        ),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            traversalEdgeBehavior: traversalEdgeBehaviorFor(context),
+            builder: (_) => const CertificatePinningPage(),
+          ),
+        ),
       ),
       ToggleTile(
         label: tr('checkOnStart'),
@@ -854,27 +901,52 @@ class _SettingsPageState extends State<SettingsPage> {
         onChanged: (value) =>
             settingsProvider.onlyCheckInstalledOrTrackOnlyApps = value,
       ),
-      ConnectedCard(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        child: GeneratedForm(
-          tileMode: true,
-          items: [
-            [
-              GeneratedFormTextField(
-                'globalApkFilterRegEx',
-                label: tr('globalApkFilterRegEx'),
-                required: false,
-                additionalValidators: [regExValidator],
-              )..value = settingsProvider.globalApkFilterRegEx,
-            ],
+      SectionHeader(
+        tr('filteringAndVersions'),
+        padding: _settingsSectionPadding,
+      ),
+      GeneratedForm(
+        tileMode: true,
+        joinedTiles: false,
+        items: [
+          [
+            GeneratedFormTextField(
+              'globalApkFilterRegEx',
+              label: tr('globalApkFilterRegEx'),
+              required: false,
+              additionalValidators: [regExValidator],
+            )..value = settingsProvider.globalApkFilterRegEx,
           ],
-          onValueChanges: (values, valid, isBuilding) {
-            if (valid && !isBuilding) {
-              settingsProvider.globalApkFilterRegEx =
-                  values['globalApkFilterRegEx'];
-            }
-          },
-        ),
+          [
+            GeneratedFormTextField(
+              'globalVersionExtractionRegEx',
+              label: tr('globalVersionExtractionRegEx'),
+              required: false,
+              additionalValidators: [regExValidator],
+            )..value = settingsProvider.globalVersionExtractionRegEx,
+          ],
+          [
+            GeneratedFormTextField(
+              'globalMatchGroupToUse',
+              label: tr(
+                'matchGroupToUseForX',
+                args: [tr('globalVersionExtractionRegEx')],
+              ),
+              required: false,
+              hint: '\$0',
+            )..value = settingsProvider.globalMatchGroupToUse,
+          ],
+        ],
+        onValueChanges: (values, valid, isBuilding) {
+          if (valid && !isBuilding) {
+            settingsProvider.globalApkFilterRegEx =
+                values['globalApkFilterRegEx'];
+            settingsProvider.globalVersionExtractionRegEx =
+                values['globalVersionExtractionRegEx'];
+            settingsProvider.globalMatchGroupToUse =
+                values['globalMatchGroupToUse'];
+          }
+        },
       ),
       ToggleTile(
         label: tr('removeOnExternalUninstall'),
@@ -924,6 +996,7 @@ class _SettingsPageState extends State<SettingsPage> {
           },
         ),
       ),
+      SectionHeader(tr('installation'), padding: _settingsSectionPadding),
       ToggleTile(
         label: tr('parallelDownloads'),
         value: settingsProvider.parallelDownloads,
@@ -1018,12 +1091,13 @@ class _SettingsPageState extends State<SettingsPage> {
     final settingsProvider = context.read<SettingsProvider>();
     final sdk = androidSdkInt ?? 0;
     return [
+      SectionHeader(tr('theme'), padding: _settingsSectionPadding),
       CardTile(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Flexible(child: Text(tr('theme'))),
+            Flexible(child: Text(tr('themeMode'))),
             const SizedBox(width: 12),
             SegmentedButton<ThemeSettings>(
               showSelectedIcon: false,
@@ -1065,8 +1139,10 @@ class _SettingsPageState extends State<SettingsPage> {
       _fieldTile(context, const _ColourSchemeDropdown()),
       if (settingsProvider.colourSchemeMode != ColourSchemeMode.materialYou)
         colorPicker,
+      SectionHeader(tr('appListSection'), padding: _settingsSectionPadding),
       _fieldTile(context, sortDropdown),
       orderControl,
+      SectionHeader(tr('languageAndText'), padding: _settingsSectionPadding),
       _fieldTile(context, const _LocaleDropdown()),
       if (sdk >= 29)
         ToggleTile(
@@ -1090,6 +1166,7 @@ class _SettingsPageState extends State<SettingsPage> {
             }
           },
         ),
+      SectionHeader(tr('appBehavior'), padding: _settingsSectionPadding),
       ToggleTile(
         label: tr('showWebInAppView'),
         value: settingsProvider.showAppWebpage,

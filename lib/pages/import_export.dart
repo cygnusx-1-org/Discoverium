@@ -120,11 +120,7 @@ class _ImportFromURLListPageState extends State<ImportFromURLListPage> {
             backgroundColor: Theme.of(context).colorScheme.surface,
             body: CustomScrollView(
               slivers: [
-                SliverAppBar(
-                  pinned: true,
-                  automaticallyImplyLeading: false,
-                  title: Text(tr('importFromURLList')),
-                ),
+                CustomAppBar(title: tr('importFromURLList')),
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(
@@ -146,9 +142,12 @@ class _ImportFromURLListPageState extends State<ImportFromURLListPage> {
                               focusNode: _urlListFocus,
                               controller: controller.urlController,
                               maxLines: null,
-                              minLines: 8,
+                              minLines: 5,
+                              keyboardType: TextInputType.multiline,
+                              textInputAction: TextInputAction.newline,
                               decoration: InputDecoration(
                                 labelText: tr('appURLList'),
+                                alignLabelWithHint: true,
                               ),
                               validator: controller.validate,
                               autovalidateMode:
@@ -198,9 +197,12 @@ class _ImportFromURLListPageState extends State<ImportFromURLListPage> {
                           padding: AppPaddings.cardInner,
                           child: Text(
                             tr('importedAppsIdDisclaimer'),
-                            textAlign: TextAlign.center,
                             style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(fontStyle: FontStyle.italic),
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                ),
                           ),
                         ),
                       ],
@@ -831,6 +833,7 @@ class SelectionModal extends StatefulWidget {
     this.titlesAreLinks = true,
     this.title,
     this.deselectThese = const [],
+    this.entryUrls = const {},
   });
 
   final String? title;
@@ -839,6 +842,7 @@ class SelectionModal extends StatefulWidget {
   final List<String> deselectThese;
   final bool onlyOneSelectionAllowed;
   final bool titlesAreLinks;
+  final Map<String, String> entryUrls;
 
   @override
   State<SelectionModal> createState() => _SelectionModalState();
@@ -941,24 +945,25 @@ class _SelectionModalState extends State<SelectionModal> {
   }
 
   Widget _buildUrlLink(MapEntry<String, List<String>> entry) {
+    final url = widget.entryUrls[entry.key] ?? entry.key;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (widget.titlesAreLinks)
           LinkText(
-            text: entry.value.isEmpty ? entry.key : entry.value[0],
-            url: entry.key,
+            text: entry.value.isEmpty ? url : entry.value[0],
+            url: url,
             style: const TextStyle(fontWeight: FontWeight.bold),
           )
         else
           Text(
-            entry.value.isEmpty ? entry.key : entry.value[0],
+            entry.value.isEmpty ? url : entry.value[0],
             style: const TextStyle(fontWeight: FontWeight.bold),
             textAlign: TextAlign.start,
           ),
         if (widget.titlesAreLinks)
           Text(
-            Uri.parse(entry.key).host,
+            Uri.parse(url).host,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               decoration: TextDecoration.underline,
             ),
@@ -1067,12 +1072,14 @@ class _SelectionModalState extends State<SelectionModal> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              entry.value.isEmpty ? entry.key : entry.value[0],
+              entry.value.isEmpty
+                  ? widget.entryUrls[entry.key] ?? entry.key
+                  : entry.value[0],
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             if (widget.titlesAreLinks)
               Text(
-                Uri.parse(entry.key).host,
+                Uri.parse(widget.entryUrls[entry.key] ?? entry.key).host,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   decoration: TextDecoration.underline,
                 ),
@@ -1138,7 +1145,9 @@ class _SelectionModalState extends State<SelectionModal> {
         : RegExp(filterRegex);
     final List<MapEntry<String, List<String>>> filteredEntries = [];
     String searchableText(MapEntry<String, List<String>> entry) =>
-        entry.value.isEmpty ? entry.key : entry.value[0];
+        entry.value.isEmpty
+        ? widget.entryUrls[entry.key] ?? entry.key
+        : entry.value[0];
     for (final entry in widget.entries.entries) {
       if (filterRegexCompiled == null ||
           filterRegexCompiled.hasMatch(searchableText(entry))) {
@@ -1218,7 +1227,7 @@ class _SelectionModalState extends State<SelectionModal> {
       // A single flexible row keeps the select-all count from pushing the
       // actions into AlertDialog's vertical overflow layout. The label
       // ellipsizes on very narrow screens instead.
-      actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      actionsPadding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
       actions: [
         Row(
           children: [

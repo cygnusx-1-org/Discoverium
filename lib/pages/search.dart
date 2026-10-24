@@ -12,6 +12,7 @@ import 'package:obtainium/core/logging/app_logger.dart';
 import 'package:obtainium/providers/notifications_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
+import 'package:obtainium/utils/http_service_image.dart';
 import 'package:obtainium/utils/nav_helper.dart';
 import 'package:provider/provider.dart';
 
@@ -307,11 +308,13 @@ class SearchPageState extends State<SearchPage> {
         height: size,
         child: url == null || _failedIconUrls.contains(url)
             ? placeholder
-            : Image.network(
-                url,
+            : Image(
+                image: ResizeImage.resizeIfNeeded(
+                  cacheDim,
+                  cacheDim,
+                  HttpServiceImage(url),
+                ),
                 fit: BoxFit.cover,
-                cacheWidth: cacheDim,
-                cacheHeight: cacheDim,
                 errorBuilder: (context, error, stack) {
                   // Remember the failure so the list stops retrying on scroll.
                   WidgetsBinding.instance.addPostFrameCallback((_) {

@@ -7,7 +7,7 @@ import 'package:obtainium/providers/apps_provider.dart';
 import 'e2e_helpers.dart';
 
 /// Attempts a real silent update of a package that the runner pre-installed
-/// with Obtainium as its installer. Falls back to asserting that the APK was
+/// with Discoverium as its installer. Falls back to asserting that the APK was
 /// downloaded when the silent session can't complete on the device.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -16,7 +16,7 @@ void main() {
     if (!e2eRunInstall) {
       markTestSkipped(
         'Needs the runner\'s setup: a local APK server and '
-        '$e2eTestPackageId pre-installed with Obtainium as its installer. '
+        '$e2eTestPackageId pre-installed with Discoverium as its installer. '
         'Run "./tool/e2e.sh" (install tests are enabled by default), or '
         're-run flutter test with --dart-define=E2E_RUN_INSTALL=true',
       );
@@ -24,9 +24,9 @@ void main() {
     }
     if (await getInstalledInfo(e2eTestPackageId) == null) {
       markTestSkipped(
-        'Pre-install $e2eTestPackageId with Obtainium as its installer '
+        'Pre-install $e2eTestPackageId with Discoverium as its installer '
         '(the runner does this); e.g. '
-        'adb install -r -i dev.imranr.obtainium.debug '
+        'adb install -r -i org.cygnusx1.discoverium.debug '
         'build/e2e_assets/testapp-v1.apk',
       );
       return;

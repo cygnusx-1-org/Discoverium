@@ -47,6 +47,7 @@ import 'package:obtainium/components/generated_form_model.dart';
 import 'package:obtainium/core/logging/app_logger.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/models/app.dart';
+import 'package:obtainium/models/typed_settings.dart';
 import 'package:obtainium/providers/apk_version.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/utils/format_utils.dart';
@@ -285,11 +286,16 @@ class SourceProvider {
       }
     }
 
+    final settingsProvider = SettingsProvider();
+    await settingsProvider.initializeSettings();
     if (!source.suppressStandardVersionExtraction) {
-      final String? extractedVersion = extractVersion(
-        additionalSettings['versionExtractionRegEx'] as String?,
-        additionalSettings['matchGroupToUse'] as String?,
+      final String? extractedVersion = extractVersionWithGlobalDefault(
+        additionalSettings,
+        settingsProvider,
         apk.version,
+        allowGlobalDefault: !source.excludeCommonSettingKeys.contains(
+          'versionExtractionRegEx',
+        ),
       );
       if (extractedVersion != null) {
         apk = apk.copyWith(version: extractedVersion);
@@ -302,12 +308,10 @@ class SourceProvider {
         version: apk.releaseDate!.microsecondsSinceEpoch.toString(),
       );
     }
-    final settingsProvider = SettingsProvider();
-    await settingsProvider.initializeSettings();
     apk = apk.copyWith(
       apkUrls: filterApks(
         apk.apkUrls,
-        additionalSettings['apkFilterRegEx'] ??
+        TypedSettings(additionalSettings).getStringOrNull('apkFilterRegEx') ??
             settingsProvider.globalApkFilterRegEx,
         additionalSettings['invertAPKFilter'],
       ),
@@ -413,10 +417,13 @@ class SourceProvider {
   }
 
   // Returns errors in [results, errors] instead of throwing them
+  /// [additionalSettings] override the source's defaults for every URL, e.g.
+  /// the device a search profile found the apps with.
   Future<List<dynamic>> getAppsByURLNaive(
     List<String> urls, {
     Set<String> alreadyAddedUrls = const {},
     AppSource? sourceOverride,
+    Map<String, dynamic> additionalSettings = const {},
   }) async {
     final List<App> apps = [];
     final Map<String, dynamic> errors = {};
@@ -435,9 +442,12 @@ class SourceProvider {
               source,
               url,
               sourceIsOverriden: sourceOverride != null,
-              getDefaultValuesFromFormItems(
-                source.combinedAppSpecificSettingFormItems,
-              ),
+              {
+                ...getDefaultValuesFromFormItems(
+                  source.combinedAppSpecificSettingFormItems,
+                ),
+                ...additionalSettings,
+              },
             );
           } catch (e) {
             return e;
@@ -706,10 +716,30 @@ _apkVersions(App app) {
   );
 }
 
+/// Whether track-only [app] has a new release.
+///
+/// A track-only app has no APK, so there is no manifest version to go by: the
+/// version marked installed is compared with the latest release version the
+/// source reports. That version is a label (a tag or release title), so any
+/// change to it is a new release, unless the two name the same release
+/// ("v1.18.1" and "1.18.1:Eclipse").
+bool _trackOnlyHasUpdate(App app) {
+  final installed = app.installedVersion;
+  if (installed == null) return false;
+  final latest = app.latestVersion;
+  if (sameVersionLabel(installed, latest)) return false;
+  if (_compareVersionCores(installed, latest) == 0) {
+    return sameCoreIsNewer(installed, latest);
+  }
+  return true;
+}
+
 /// Whether [app] has an update: the APK it would install is newer than the
 /// installed build, going only by the versions the two declare (see
-/// [apkVersionIsNewer]). The release's tag or title plays no part.
+/// [apkVersionIsNewer]). The release's tag or title plays no part, except for
+/// a track-only app, which has no APK (see [_trackOnlyHasUpdate]).
 bool appHasUpdate(App app) {
+  if (app.settings.getBool('trackOnly')) return _trackOnlyHasUpdate(app);
   final versions = _apkVersions(app);
   return versions != null &&
       apkVersionIsNewer(
@@ -721,10 +751,13 @@ bool appHasUpdate(App app) {
 }
 
 /// Whether the APK [after] would install declares a different version from the
-/// one [before] would.
+/// one [before] would. A track-only app has no APK, so for it this is whether
+/// the release version changed.
 bool latestApkVersionChanged(App before, App after) =>
-    before.latestVersionCode != after.latestVersionCode ||
-    before.latestVersionName != after.latestVersionName;
+    after.settings.getBool('trackOnly')
+    ? before.latestVersion != after.latestVersion
+    : before.latestVersionCode != after.latestVersionCode ||
+          before.latestVersionName != after.latestVersionName;
 
 /// Whether an update should be offered for [app], honouring the user's
 /// `hideDowngrades` preference.
@@ -732,9 +765,14 @@ bool latestApkVersionChanged(App before, App after) =>
 /// With the preference on (the default) this is [appHasUpdate]. With it off,
 /// any APK whose version differs from the installed build's is offered,
 /// downgrades included, which is the only thing that switch can mean. A git
-/// hash that differs on its own is still not a different version.
+/// hash that differs on its own is still not a different version. For a
+/// track-only app, any release version that names a different release.
 bool appHasOfferableUpdate(App app, SettingsProvider settingsProvider) {
   if (settingsProvider.hideDowngrades) return appHasUpdate(app);
+  if (app.settings.getBool('trackOnly')) {
+    final installed = app.installedVersion;
+    return installed != null && !sameVersionLabel(installed, app.latestVersion);
+  }
   final versions = _apkVersions(app);
   return versions != null &&
       (versions.latestCode != versions.installedCode ||

@@ -190,6 +190,13 @@ Override the contract methods you need:
 | `changeLogPageFromStandardUrl(url)` | URL of the human-readable changelog/releases page. Set `changeLogPageIsStandardUrl = true` in the constructor instead of overriding this if the changelog page is the same as the standard URL. |
 | `postProcessApp(app)` | Transform the `App` object after all other processing (e.g. F-Droid repos update the URL with an `appId` query param). |
 
+`searchProfiles` defaults to one option using the source's existing name and
+selection preference. A source can expose separate profiles with independent
+IDs, names, query settings, and app settings. Only the explicitly declared app
+settings follow a selected result; query-only values, including credentials,
+are not copied. Search results retain separate selection IDs and real links so
+the same URL can appear under multiple profiles without losing its settings.
+
 ### Helpers you should reuse (don't reinvent)
 
 - **`standardizeUrlWithRegex(url, subdomainPrefix:, pathPattern:)`** — the common
@@ -200,13 +207,60 @@ Override the contract methods you need:
   `.apk/.xapk/.apkm/.apks` (+ optional `.zip` and tarballs). Use it instead of
   hand-rolling `.endsWith('.apk')`, which historically missed split-APK formats.
 - `sourceRequest(...)` — the base HTTP method. It merges source config + per-app
-  settings, applies header/prefetch modifiers, follows redirects with a cap, and
-  always closes the `HttpClient`. **Use this**, not a raw `http.get`. Sources can opt
+  settings, applies header/prefetch modifiers, and follows redirects with a cap.
+  **Use this**, not a raw `http.get`. It uses the shared client from `HttpService`;
+  callers that stream a response must consume or cancel it. Sources can opt
   into a per-host request gate (`enableHostRequestGate`, `maxConcurrentRequestsPerHost`)
   that bounds metadata concurrency and short-circuits a host for a window after a
   `429`/`503`/Cloudflare challenge (APKMirror uses 2 concurrent).
 - `filterApks`, `filterApksByArch`, `extractVersion`, `findStandardFormatsForVersion`,
   `getLinksFromParsedHTML`, `getApkUrlsFromUrls`.
+
+### Networking and certificates
+
+- All app HTTP requests go through `lib/services/http_service.dart`. On Android the
+  default client is **embedded Cronet** (`cronet_http`), not `dart:io`. Cronet uses
+  Android's platform certificate verifier, so it honors the OS trust store,
+  user-installed CAs, disabled system CAs, and system proxy settings.
+- `android/app/src/main/res/xml/network_security_config.xml` opts into system and
+  user CAs. The RuStore Mintsifry root lives in `res/raw` and is trusted only for
+  `rustore.ru` and its subdomains; it is not a global trust anchor.
+- `cronet_http` defaults to the Play Services implementation. The Gradle hook in
+  `android/build.gradle.kts` forces `cronetHttpNoPlay=true`, embedding Cronet in
+  every build (including F-Droid). Do not remove it.
+- Cronet cannot disable TLS verification, so requests with `allowInsecure` use
+  `dart:io` via `IOClient`. This is the only intentional exception.
+- Certificate pinning is opt-in. Settings → Updates → Certificate pinning opens a
+  dedicated management page. Built-in pin sets come from `builtInPinnedHosts` in
+  `lib/services/pinned_certificates.dart` and are kept virtual: the JSON store in
+  `lib/services/pin_store.dart` only records user pin sets and disabled built-in
+  hosts/certificate fingerprints. This lets app updates add or rotate bundled roots
+  automatically.
+- Pinning is exclusive per host: hosts with an enabled pin set use `dart:io` with
+  only that set's certificates, ignoring Android's trust store. Hosts without a
+  matching set still use Cronet. More-specific host rules win; user pin sets win
+  ties against built-ins. `HttpService` resolves the set per redirect hop.
+  Requests without an explicit `enableCertificatePinning` value use the setting
+  cached by `SettingsProvider`, so helper request paths cannot silently bypass
+  pinning.
+- The pin store is JSON schema version 1 at
+  `<app support>/pinned_certificates.json`. It contains `userSets`,
+  `disabledBuiltInHosts`, and `disabledBuiltInCerts` keyed by fingerprint. Saves
+  are atomic (temp file plus rename); unreadable files are renamed with a
+  `.corrupt-<millis>` suffix and the app continues with built-in pins.
+- User certificates are parsed by the platform `CertificateFactory` through
+  `lib/providers/certificate_bridge.dart`; PEM and DER uploads are supported. The
+  store keeps user certificates as PEM plus metadata. Built-in certificate
+  deletion/restoration is by fingerprint, so replacing a bundled root in a later
+  app version behaves predictably.
+- The existing `enableCertificatePinning` preference is preserved across upgrades.
+  A legacy install with pinning on keeps the same four built-in hosts and roots; a
+  legacy install with pinning off keeps it off, with the built-in sets ready to
+  enable. `test/pin_store_test.dart` covers this default state, resolution
+  precedence, persistence, and corrupt-store recovery.
+- `cronet_http` still applies the standalone Kotlin Gradle plugin, so
+  `android.builtInKotlin` is disabled in `android/gradle.properties` for now. Revisit
+  this when `cronet_http` migrates to built-in Kotlin.
 
 ### Samsung Galaxy Store settings
 
@@ -221,6 +275,14 @@ remain strings to preserve leading zeros.
 For example, Samsung Assistant (`com.samsung.android.app.sreminder`) can be
 queried with device model `SM-S9480` and CSC `CHC` for the China release.
 Availability still depends on the requested app, device, and Android SDK version.
+
+Search exposes `Samsung Galaxy Store` and `Samsung Galaxy Store (CN)`. The
+international option uses the existing `SM-S948B/DBT/425/01` profile and endpoint
+discovery; it is not a fixed US catalog.
+China uses `SM-S9480/CHC/460/00`. Each search requests only the first `2040`
+result batch (1–20), without fetching details or download authorization for
+every result. Selecting a result carries its device model and CSC into the app
+settings used by subsequent queries and updates.
 
 After a failed stub request, ODS uses the same configured device and network
 parameters. `CHC` with MCC `460` selects the China service; other configurations
@@ -259,6 +321,11 @@ fails before authorization. Full APKs, including universal `32n64` packages, are
 accepted; delta URLs are unused. ODS POST redirects are disabled and headers do
 not affect APK transfers.
 
+The publisher comes from a nonblank `sellerName` in validated download metadata
+or identity-bound main details. Missing later details retain the confirmed
+publisher and name. The existing version-code option changes the returned
+version while detail matching continues to use the original store version name.
+
 Optional store dates and publisher notes use same-endpoint main (`2290`),
 overview (`2291`), and main (`2290`) requests. Both main responses must match the
 selected package, product, version, version code, and full size; overview must
@@ -270,14 +337,23 @@ remain unique scalar values. The validated overview `lastUpdateDate` populates
 changed, malformed, or unavailable details leave these fields unset and preserve
 the authorized APK.
 
-The source remains per-app: it does not add cross-app update batches or new
-settings. Anonymous ODS requests reuse one generated identity throughout the
+The source remains per-app and does not add cross-app update batches.
+Anonymous ODS requests reuse one generated identity throughout the
 operation and do not require account credentials. Stub and ODS requests have
 40-second deadlines. A stub timeout can use the same-profile ODS fallback;
 ODS timeouts do not trigger restore or mirror authorization. Rate limits retain
 their retry timing and stop the fallback chain. During optional discovery or
 store details, a rate limit preserves the already authorized APK and stops
 further detail requests.
+
+### Source-specific notes: Tencent release dates
+
+The existing simple-page download remains authoritative. An optional detail-page
+request reads `__NEXT_DATA__` only from the main `GameDetail` card and accepts a
+unique package record matching the selected version, MD5, and size. Its Unix
+seconds populate the UTC `releaseDate`. A different 64-bit APK URL or missing
+legacy fingerprint skips this request. A 15-second deadline, oversized response,
+invalid metadata, or transport failure leaves the original APK result intact.
 
 ### Source-specific notes: F-Droid page metadata
 
@@ -575,6 +651,16 @@ Four concrete implementations:
 | `ShizukuInstaller` | `shizuku_apk_installer` plugin | Self-update of Obtainium itself, or when Shizuku/Dhizuku/Sui is available |
 | `ExternalInstaller` | Native `MethodChannel` bridge (`external_install_bridge.dart` + `MainActivity.kt`) | Hands off to a third-party installer app chosen by the user; lists eligible targets via `listInstallTargets()` and converts file paths to `content://` URIs via `FileProvider` |
 | `RootInstaller` | `su` + `pm install` CLI | Elevated installs for the current foreground user, not just user 0 (needed under multi-user) |
+
+Samsung Galaxy Store apps expose an opt-in installation-source switch next to
+the existing per-app Google Play switch. These switches are mutually exclusive.
+`installerPackageNameForApp` resolves the source once for single and split APK
+installs: the Samsung opt-in uses `com.sec.android.app.samsungapps`, overriding
+the global Google Play default for that app; otherwise the existing global or
+per-app Google Play rule applies. Other sources ignore the Samsung flag.
+Only Shizuku/Sui and root apply this attribution; Dhizuku rejects the Samsung
+option. The selected store must be installed for the target user. This changes
+installation-source metadata, not APK signatures or privileged permissions.
 
 The selection logic (in `apps_provider_install.dart`) checks: self-update → `ShizukuInstaller`;
 user has chosen an external installer → `ExternalInstaller`; otherwise → `StockInstaller`.

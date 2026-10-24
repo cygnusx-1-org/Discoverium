@@ -6,6 +6,7 @@ App _app({
   int? installedCode,
   String? latest,
   int? latestCode,
+  String release = '1450',
   bool trackOnly = false,
 }) => App(
   id: 'fork.risin42.nagramx',
@@ -15,7 +16,7 @@ App _app({
   installedVersion: installed,
   installedVersionCode: installedCode,
   // The release's tag, which says nothing about the APK (#59).
-  latestVersion: '1450',
+  latestVersion: release,
   latestVersionCode: latestCode,
   latestVersionName: latest,
   preferredApkIndex: 0,
@@ -124,15 +125,16 @@ void main() {
       expect(appHasUpdate(app), false);
     });
 
-    test('a track-only app has no APK, so it is never offered one', () {
-      final app = _app(
-        installed: '12.9.2-bd9adbc',
-        installedCode: 1249,
-        latest: '12.10.1-dec46b0',
-        latestCode: 1250,
-        trackOnly: true,
+    test('a track-only app has no APK, so its release version decides', () {
+      final app = _app(installed: '1449', release: '1450', trackOnly: true);
+      expect(appHasUpdate(app), true);
+      expect(
+        appHasUpdate(
+          _app(installed: 'v1450', release: '1450', trackOnly: true),
+        ),
+        false,
+        reason: 'the same release spelled with a leading v',
       );
-      expect(appHasUpdate(app), false);
     });
   });
 

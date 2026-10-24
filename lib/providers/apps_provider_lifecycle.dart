@@ -7,7 +7,6 @@ import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_package_manager/android_package_manager.dart';
 import 'package:obtainium/app_sources/html.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:http/http.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/core/logging/app_logger.dart';
@@ -52,6 +51,37 @@ bool isIconCacheUsable({
     return true;
   }
   return cacheModified.millisecondsSinceEpoch >= packageLastUpdateTime;
+}
+
+Future<Uint8List?> loadAppIconSafely(
+  Future<Uint8List?> Function()? load, {
+  Uint8List? fallback,
+}) async {
+  if (load == null) return fallback;
+  try {
+    return await load();
+  } catch (e) {
+    AppLogger.warn('Failed to load app icon: $e', error: e);
+    return fallback;
+  }
+}
+
+Future<Uint8List?> readCachedAppIconSafely(File file) async {
+  try {
+    return await file.readAsBytes();
+  } catch (e) {
+    AppLogger.warn('Failed to read cached app icon: $e', error: e);
+    return null;
+  }
+}
+
+Future<void> writeCachedAppIconSafely(File file, Uint8List bytes) async {
+  try {
+    await file.parent.create(recursive: true);
+    await file.writeAsBytes(bytes);
+  } catch (e) {
+    AppLogger.warn('Failed to write cached app icon: $e', error: e);
+  }
 }
 
 /// Uses [bulk] when it contains [key], otherwise confirms with [lookup].
@@ -373,16 +403,19 @@ extension AppsProviderLifecycle on AppsProvider {
     );
     if (app?.icon == null || !alreadyCached) {
       Uint8List? icon;
+      var needsCacheWrite = false;
       if (alreadyCached) {
-        icon = await cachedIcon.readAsBytes();
-      } else {
-        // Apps added from Discoverium's curated repo carry an icon URL, which
-        // gives a real icon even before the app is installed on device.
-        icon = await _downloadDiscoveriumIcon(appId);
-        icon ??= await app?.installedInfo?.applicationInfo?.getAppIcon();
+        icon = await readCachedAppIconSafely(cachedIcon);
+        needsCacheWrite = icon == null;
       }
-      if (icon != null && !alreadyCached) {
-        unawaited(cachedIcon.writeAsBytes(icon));
+      // Apps added from Discoverium's curated repo carry an icon URL, which
+      // gives a real icon even before the app is installed on device.
+      icon ??= await _downloadDiscoveriumIcon(appId);
+      icon ??= await loadAppIconSafely(
+        app?.installedInfo?.applicationInfo?.getAppIcon,
+      );
+      if (icon != null && (!alreadyCached || needsCacheWrite)) {
+        unawaited(writeCachedAppIconSafely(cachedIcon, icon));
       }
       if (icon != null) {
         // Re-read after the awaits above: the app may have been removed while
@@ -410,7 +443,7 @@ extension AppsProviderLifecycle on AppsProvider {
     // this every app-list load would re-request a URL already known to fail.
     if (_failedDiscoveriumIconUrls.contains(url)) return null;
     try {
-      final res = await get(Uri.parse(url));
+      final res = await HttpService().request('GET', null, {'url': url});
       if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
         return res.bodyBytes;
       }
@@ -445,7 +478,10 @@ extension AppsProviderLifecycle on AppsProvider {
             : await getInstalledInfo(app.id);
         final Uint8List? icon = canReuse
             ? this.apps[app.id]!.icon
-            : await info?.applicationInfo?.getAppIcon();
+            : await loadAppIconSafely(
+                info?.applicationInfo?.getAppIcon,
+                fallback: this.apps[app.id]?.icon,
+              );
         if (!canReuse) {
           app = app.copyWith(
             name: await (info?.applicationInfo?.getAppLabel()) ?? app.name,
@@ -477,7 +513,10 @@ extension AppsProviderLifecycle on AppsProvider {
         } else if (!canReuse && icon != null) {
           // Persist the freshly fetched icon so future cold starts can reuse
           // it (and so a changed icon replaces the stale cached one).
-          await File('${iconsCacheDir.path}/${app.id}.png').writeAsBytes(icon);
+          await writeCachedAppIconSafely(
+            File('${iconsCacheDir.path}/${app.id}.png'),
+            icon,
+          );
         }
       }),
     );

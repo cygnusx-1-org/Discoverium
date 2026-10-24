@@ -27,6 +27,20 @@ import 'package:obtainium/utils/url_utils.dart';
 /// overrides.
 const List<int> minimumUpdateAgeOptions = [0, 1, 2, 3, 5, 7, 14, 30];
 
+class SourceSearchProfile {
+  final String id;
+  final String name;
+  final Map<String, dynamic> querySettings;
+  final Map<String, dynamic> appSettings;
+
+  const SourceSearchProfile({
+    required this.id,
+    required this.name,
+    this.querySettings = const {},
+    this.appSettings = const {},
+  });
+}
+
 abstract class AppSource {
   List<String> hosts = [];
   List<String> trustedApkHosts = [];
@@ -129,19 +143,12 @@ abstract class AppSource {
       url,
     );
     Future<http.Response> perform() async {
-      final streamedResponseUrlWithResponseAndClient = await HttpService()
-          .sourceRequestStreamResponse(
-            method,
-            requestHeaders,
-            additionalSettingsPlusSourceConfig,
-            followRedirects: followRedirects,
-            postBody: postBody,
-          );
-      return await HttpService().httpClientResponseStreamToFinalResponse(
-        streamedResponseUrlWithResponseAndClient.value.key,
+      return await HttpService().request(
         method,
-        streamedResponseUrlWithResponseAndClient.key.toString(),
-        streamedResponseUrlWithResponseAndClient.value.value,
+        requestHeaders,
+        additionalSettingsPlusSourceConfig,
+        followRedirects: followRedirects,
+        postBody: postBody,
       );
     }
 
@@ -583,6 +590,9 @@ abstract class AppSource {
   }
 
   bool canSearch = false;
+  List<SourceSearchProfile> get searchProfiles => [
+    SourceSearchProfile(id: name, name: name),
+  ];
   bool includeAdditionalOptsInMainSearch = false;
   List<GeneratedFormItem> get searchQuerySettingFormItems => [];
 

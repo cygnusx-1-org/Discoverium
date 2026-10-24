@@ -115,11 +115,26 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
   List<AppSource> get searchableSources =>
       sourceProvider.sources.where((e) => e.canSearch).toList();
 
-  Map<String, List<String>> get sourceEntries => {
-    for (final s in searchableSources) s.name: [s.name],
+  /// Every searchable source once per search profile, e.g. the Galaxy Store's
+  /// global and China stores, as the Add App search offers them.
+  List<({AppSource source, SourceSearchProfile profile})> get searchOptions => [
+    for (final source in searchableSources)
+      for (final profile in source.searchProfiles)
+        (source: source, profile: profile),
+  ];
+
+  /// Keyed by profile ID: [SettingsProvider.searchDeselected] is shared with
+  /// the Add App search, which stores the same IDs.
+  Map<String, List<String>> get searchOptionEntries => {
+    for (final option in searchOptions)
+      option.profile.id: [option.profile.name],
   };
 
-  /// Adds the URLs the user selected, reporting per-URL failures.
+  /// Adds the results the user selected, reporting per-URL failures.
+  ///
+  /// Each selection is added with the settings of the search profile that
+  /// found it: an app from the China Galaxy Store only resolves with that
+  /// store's device.
   ///
   /// [sourceIdentifiers] maps a URL to the source that returned it; URLs it
   /// covers are added under that source when host detection would pick a
@@ -127,43 +142,69 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
   /// Both are required so a caller can't silently drop the source a result
   /// came from — that is exactly how #54 was introduced.
   Future<void> _addSelected(
-    List<String> selectedUrls, {
+    List<({String url, SourceSearchProfile profile})> selections, {
     required AppSource? sourceOverride,
     required Map<String, String> sourceIdentifiers,
   }) async {
-    if (selectedUrls.isEmpty) return;
+    if (selections.isEmpty) return;
     final appsProvider = context.read<AppsProvider>();
     final errors = <List<String>>[];
-    for (final batch in groupUrlsBySource(
-      sourceProvider,
-      selectedUrls,
-      sourceOverride: sourceOverride,
-      sourceIdentifiers: sourceIdentifiers,
-    )) {
-      errors.addAll(
-        await appsProvider.addAppsByURL(
-          batch.urls,
-          sourceOverride: batch.source,
-        ),
-      );
+    final byProfile =
+        <String, List<({String url, SourceSearchProfile profile})>>{};
+    for (final selection in selections) {
+      (byProfile[selection.profile.id] ??= []).add(selection);
+    }
+    for (final group in byProfile.values) {
+      for (final batch in groupUrlsBySource(
+        sourceProvider,
+        [for (final selection in group) selection.url],
+        sourceOverride: sourceOverride,
+        sourceIdentifiers: sourceIdentifiers,
+      )) {
+        errors.addAll(
+          await appsProvider.addAppsByURL(
+            batch.urls,
+            sourceOverride: batch.source,
+            additionalSettings: group.first.profile.appSettings,
+          ),
+        );
+      }
     }
     if (!mounted) return;
     if (errors.isEmpty) {
       showMessage(
-        tr('importedX', args: [plural('apps', selectedUrls.length)]),
+        tr('importedX', args: [plural('apps', selections.length)]),
         context,
       );
     } else {
       unawaited(
         showDialog(
           context: context,
-          builder: (BuildContext ctx) => ImportErrorDialog(
-            urlsLength: selectedUrls.length,
-            errors: errors,
-          ),
+          builder: (BuildContext ctx) =>
+              ImportErrorDialog(urlsLength: selections.length, errors: errors),
         ),
       );
     }
+  }
+
+  /// [description] of a result from [source], naming [profile] when the
+  /// source has several, since each of them can list the same app.
+  List<String> _describeResult(
+    List<String> description,
+    AppSource source,
+    SourceSearchProfile profile,
+    String url,
+  ) {
+    if (source.searchProfiles.length < 2) return description;
+    final described = List<String>.from(description);
+    if (described.isEmpty) described.add(url);
+    final author = described.length > 1 ? described[1] : '';
+    if (described.length < 2) described.add('');
+    described[1] = [
+      profile.name,
+      author,
+    ].where((part) => part.isNotEmpty).join(' · ');
+    return described;
   }
 
   Future<void> _runMultiSourceSearch() async {
@@ -171,7 +212,7 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
     final settingsProvider = context.read<SettingsProvider>();
     final appsProvider = context.read<AppsProvider>();
     try {
-      final entries = sourceEntries;
+      final entries = searchOptionEntries;
       final searchSources =
           await showDialog<List<String>?>(
             context: context,
@@ -190,23 +231,35 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
           .where((s) => !searchSources.contains(s))
           .toList();
 
-      final selected = searchableSources
-          .where((e) => searchSources.contains(e.name))
+      final selected = searchOptions
+          .where((option) => searchSources.contains(option.profile.id))
           .toList();
 
       // Sources that need extra query options ask for them up front, one at a
       // time, so the dialogs don't stack.
-      final Map<AppSource, Map<String, dynamic>> querySettings = {};
-      for (final source in selected) {
+      final queries =
+          <
+            ({
+              AppSource source,
+              SourceSearchProfile profile,
+              Map<String, dynamic> querySettings,
+            })
+          >[];
+      for (final option in selected) {
+        final source = option.source;
         if (!source.includeAdditionalOptsInMainSearch) {
-          querySettings[source] = {};
+          queries.add((
+            source: source,
+            profile: option.profile,
+            querySettings: Map.of(option.profile.querySettings),
+          ));
           continue;
         }
         if (!mounted) return;
         final values = await showDialog<Map<String, dynamic>?>(
           context: context,
           builder: (BuildContext ctx) => GeneratedFormModal(
-            title: tr('searchX', args: [source.name]),
+            title: tr('searchX', args: [option.profile.name]),
             items: [
               ...source.searchQuerySettingFormItems.map((e) => [e]),
               [_sourceUrlField(source, appsProvider)],
@@ -214,18 +267,33 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
           ),
         );
         if (values == null) return;
-        querySettings[source] = values;
+        queries.add((
+          source: source,
+          profile: option.profile,
+          querySettings: {...option.profile.querySettings, ...values},
+        ));
       }
 
-      final results = <MapEntry<String, Map<String, List<String>>>>[];
+      final results =
+          <
+            ({
+              AppSource source,
+              SourceSearchProfile profile,
+              Map<String, List<String>> entries,
+            })
+          >[];
       await Future.wait(
-        querySettings.entries.map((entry) async {
+        queries.map((query) async {
           try {
-            final res = await entry.key.search(
+            final res = await query.source.search(
               multiSourceSearchQuery,
-              querySettings: entry.value,
+              querySettings: query.querySettings,
             );
-            results.add(MapEntry(entry.key.sourceIdentifier, res));
+            results.add((
+              source: query.source,
+              profile: query.profile,
+              entries: res,
+            ));
           } catch (err) {
             final errorToShow = err is ObtainiumError
                 ? ObtainiumError(
@@ -242,16 +310,40 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
       );
 
       // Interleave results so no single source dominates the top of the list.
-      final interleaved = <String, MapEntry<String, List<String>>>{};
+      // Keyed by URL, except that a source with several profiles keeps one
+      // entry per profile, since each profile adds the app differently.
+      final interleaved =
+          <
+            String,
+            ({
+              String url,
+              String sourceIdentifier,
+              SourceSearchProfile profile,
+              List<String> description,
+            })
+          >{};
       var index = 0;
       var done = false;
       while (!done) {
         done = true;
         for (final r in results) {
-          if (r.value.length > index) {
+          if (r.entries.length > index) {
             done = false;
-            final single = r.value.entries.elementAt(index);
-            interleaved[single.key] = MapEntry(r.key, single.value);
+            final single = r.entries.entries.elementAt(index);
+            final key = r.source.searchProfiles.length > 1
+                ? '${r.profile.id} ${single.key}'
+                : single.key;
+            interleaved[key] = (
+              url: single.key,
+              sourceIdentifier: r.source.sourceIdentifier,
+              profile: r.profile,
+              description: _describeResult(
+                single.value,
+                r.source,
+                r.profile,
+                single.key,
+              ),
+            );
           }
         }
         index++;
@@ -261,20 +353,28 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
       }
 
       if (!mounted) return;
-      final selectedUrls =
+      final selectedKeys =
           await showDialog<List<String>?>(
             context: context,
             builder: (BuildContext ctx) => SelectionModal(
-              entries: interleaved.map((k, v) => MapEntry(k, v.value)),
+              entries: interleaved.map((k, v) => MapEntry(k, v.description)),
+              entryUrls: interleaved.map((k, v) => MapEntry(k, v.url)),
               selectedByDefault: false,
               onlyOneSelectionAllowed: false,
             ),
           ) ??
           [];
       await _addSelected(
-        selectedUrls,
+        [
+          for (final key in selectedKeys)
+            if (interleaved[key] case final result?)
+              (url: result.url, profile: result.profile),
+        ],
         sourceOverride: null,
-        sourceIdentifiers: interleaved.map((k, v) => MapEntry(k, v.key)),
+        sourceIdentifiers: {
+          for (final result in interleaved.values)
+            result.url: result.sourceIdentifier,
+        },
       );
     } catch (e) {
       if (mounted) showError(e, context);
@@ -317,13 +417,16 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
     );
   }
 
-  Future<void> _runSingleSourceSearch(AppSource source) async {
+  Future<void> _runSingleSourceSearch(
+    AppSource source,
+    SourceSearchProfile profile,
+  ) async {
     final appsProvider = context.read<AppsProvider>();
     try {
       final values = await showDialog<Map<String, dynamic>?>(
         context: context,
         builder: (BuildContext ctx) => GeneratedFormModal(
-          title: tr('searchX', args: [source.name]),
+          title: tr('searchX', args: [profile.name]),
           items: [
             [
               GeneratedFormTextField(
@@ -349,7 +452,7 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
       }
       final urlsWithDescriptions = await effectiveSource.search(
         values['searchQuery'] as String,
-        querySettings: values,
+        querySettings: {...profile.querySettings, ...values},
       );
       if (urlsWithDescriptions.isEmpty) {
         throw ObtainiumError(tr('noResults'));
@@ -363,7 +466,7 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
           ) ??
           [];
       await _addSelected(
-        selectedUrls,
+        [for (final url in selectedUrls) (url: url, profile: profile)],
         sourceOverride: effectiveSource,
         sourceIdentifiers: const {},
       );
@@ -380,7 +483,7 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
           context: context,
           builder: (BuildContext ctx) => SelectionModal(
             title: tr('selectX', args: [tr('source').toLowerCase()]),
-            entries: sourceEntries,
+            entries: searchOptionEntries,
             selectedByDefault: false,
             onlyOneSelectionAllowed: true,
             titlesAreLinks: false,
@@ -388,10 +491,12 @@ class _AdvancedSearchPageState extends State<AdvancedSearchPage> {
         ) ??
         [];
     if (!mounted) return;
-    final source = searchableSources
-        .where((e) => picked.contains(e.name))
+    final option = searchOptions
+        .where((option) => picked.contains(option.profile.id))
         .firstOrNull;
-    if (source != null) await _runSingleSourceSearch(source);
+    if (option != null) {
+      await _runSingleSourceSearch(option.source, option.profile);
+    }
   }
 
   @override

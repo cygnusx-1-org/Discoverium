@@ -26,6 +26,7 @@ class GeneratedForm extends StatefulWidget {
     this.tileMode = false,
     this.noTilePadding = false,
     this.autofocusFirstTextField = false,
+    this.joinedTiles = true,
   });
 
   final List<List<GeneratedFormItem>> items;
@@ -33,6 +34,7 @@ class GeneratedForm extends StatefulWidget {
 
   final bool tileMode;
   final bool noTilePadding;
+  final bool joinedTiles;
 
   /// On TV, focuses the first text field's wrapper when the form is built so
   /// pages do not open without a focus ring.
@@ -246,7 +248,8 @@ class _GeneratedFormState extends State<GeneratedForm> {
           decoration: _fieldDecoration(
             labelText: tr(formItem.label) + (formItem.required ? ' *' : ''),
             hintText: formItem.hint,
-            suffixIcon: _buildHelpSuffixIcon(formItem.helpUrl),
+            suffixIcon:
+                formItem.suffixIcon ?? _buildHelpSuffixIcon(formItem.helpUrl),
           ),
           minLines: formItem.max <= 1 ? null : formItem.max,
           maxLines: formItem.max <= 1 ? 1 : formItem.max,
@@ -379,6 +382,7 @@ class _GeneratedFormState extends State<GeneratedForm> {
         for (final item in row)
           if (item is! GeneratedFormHeader) item.key: item.value,
     };
+    _normalizeExclusiveSwitches();
     for (final row in widget.items) {
       for (final item in row) {
         if (item is GeneratedFormSubForm) {
@@ -386,6 +390,20 @@ class _GeneratedFormState extends State<GeneratedForm> {
         }
       }
     }
+  }
+
+  bool _normalizeExclusiveSwitches() {
+    var changed = false;
+    for (final item in widget.items.expand((row) => row).toList().reversed) {
+      if (item is! GeneratedFormSwitch || values[item.key] != true) continue;
+      for (final key in item.mutuallyExclusiveWith) {
+        if (values[key] == true) {
+          values[key] = false;
+          changed = true;
+        }
+      }
+    }
+    return changed;
   }
 
   @override
@@ -436,6 +454,7 @@ class _GeneratedFormState extends State<GeneratedForm> {
         }
       }
     }
+    changed = _normalizeExclusiveSwitches() || changed;
     if (changed) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -596,7 +615,13 @@ class _GeneratedFormState extends State<GeneratedForm> {
   }
 
   Widget _buildHeader(GeneratedFormHeader item) {
-    final header = SectionHeader(tr(item.label));
+    final header = SectionHeader(
+      tr(item.label),
+      padding: const EdgeInsets.only(
+        top: AppSpacings.xl,
+        bottom: AppSpacings.sm,
+      ),
+    );
     return item.id == null
         ? header
         : KeyedSubtree(key: GlobalObjectKey(item.id!), child: header);
@@ -621,6 +646,11 @@ class _GeneratedFormState extends State<GeneratedForm> {
             : hapticSwitchOnChanged(context, (value) {
                 setState(() {
                   values[item.key] = value;
+                  if (value) {
+                    for (final key in item.mutuallyExclusiveWith) {
+                      if (values[key] is bool) values[key] = false;
+                    }
+                  }
                   notifyFormChange();
                 });
               }),
@@ -684,8 +714,10 @@ class _GeneratedFormState extends State<GeneratedForm> {
         } else {
           rawTiles.add(
             ConnectedCard(
-              isFirst: r == 0 || isHeaderRow(r - 1),
-              isLast: r == n - 1 || isHeaderRow(r + 1),
+              isFirst: widget.joinedTiles ? r == 0 || isHeaderRow(r - 1) : true,
+              isLast: widget.joinedTiles
+                  ? r == n - 1 || isHeaderRow(r + 1)
+                  : true,
               color: isFieldRow(r)
                   ? colorScheme.surfaceContainerHighest
                   : colorScheme.surfaceContainerLow,
@@ -696,7 +728,7 @@ class _GeneratedFormState extends State<GeneratedForm> {
       }
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        spacing: AppSpacings.connectedGap,
+        spacing: widget.joinedTiles ? AppSpacings.connectedGap : AppSpacings.sm,
         children: rawTiles,
       );
     }

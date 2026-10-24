@@ -88,9 +88,11 @@ PHONE_SUITES=(
   add_remove_app_test.dart
   add_app_defaults_test.dart
   form_inputs_test.dart
+  global_version_regex_test.dart
   redirected_zip_test.dart
   html_links_test.dart
-  app_list_density_test.dart
+  app_list_semantics_test.dart
+  stale_update_notification_test.dart
   codeberg_auth_test.dart
   screens_navigation_test.dart
   track_only_actions_test.dart
@@ -132,11 +134,24 @@ SERVER_PID=$!
 ORIG_WINDOW=$("$ADB" -s "$DEV" shell settings get global window_animation_scale 2>/dev/null | tr -d '\r')
 ORIG_TRANSITION=$("$ADB" -s "$DEV" shell settings get global transition_animation_scale 2>/dev/null | tr -d '\r')
 ORIG_ANIMATOR=$("$ADB" -s "$DEV" shell settings get global animator_duration_scale 2>/dev/null | tr -d '\r')
+# Play Protect stops each install of the unknown fixture APKs with an "App scan
+# recommended" prompt on Google Play images; store the originals.
+ORIG_VERIFIER=$("$ADB" -s "$DEV" shell settings get global package_verifier_enable 2>/dev/null | tr -d '\r')
+ORIG_VERIFIER_CONSENT=$("$ADB" -s "$DEV" shell settings get global package_verifier_user_consent 2>/dev/null | tr -d '\r')
+restore_setting() {
+  if [ -z "$2" ] || [ "$2" = "null" ]; then
+    "$ADB" -s "$DEV" shell settings delete global "$1" >/dev/null 2>&1 || true
+  else
+    "$ADB" -s "$DEV" shell settings put global "$1" "$2" >/dev/null 2>&1 || true
+  fi
+}
 restore_device_state() {
   kill "$SERVER_PID" 2>/dev/null || true
   "$ADB" -s "$DEV" shell settings put global window_animation_scale "${ORIG_WINDOW:-1.0}" >/dev/null 2>&1 || true
   "$ADB" -s "$DEV" shell settings put global transition_animation_scale "${ORIG_TRANSITION:-1.0}" >/dev/null 2>&1 || true
   "$ADB" -s "$DEV" shell settings put global animator_duration_scale "${ORIG_ANIMATOR:-1.0}" >/dev/null 2>&1 || true
+  restore_setting package_verifier_enable "$ORIG_VERIFIER"
+  restore_setting package_verifier_user_consent "$ORIG_VERIFIER_CONSENT"
   "$ADB" -s "$DEV" uninstall com.obtainium.e2etest >/dev/null 2>&1 || true
   "$ADB" -s "$DEV" uninstall com.obtainium.e2etest2 >/dev/null 2>&1 || true
 }
@@ -145,8 +160,10 @@ trap restore_device_state EXIT
 "$ADB" -s "$DEV" shell settings put global window_animation_scale 0.0
 "$ADB" -s "$DEV" shell settings put global transition_animation_scale 0.0
 "$ADB" -s "$DEV" shell settings put global animator_duration_scale 0.0
+"$ADB" -s "$DEV" shell settings put global package_verifier_enable 0
+"$ADB" -s "$DEV" shell settings put global package_verifier_user_consent -1
 
-# Resets and reinstalls the fixture packages at v1 with Obtainium as their
+# Resets and reinstalls the fixture packages at v1 with Discoverium as their
 # installer, so the stock installer can update them without a user prompt.
 # Called before every install suite because earlier suites leave newer
 # versions installed (and an interrupted run may leave a downgrade blocker).
@@ -155,9 +172,9 @@ reset_install_targets() {
     "$ADB" -s "$DEV" uninstall "$pkg" >/dev/null 2>&1 || true
   done
   for apk in testapp-v1.apk testapp2-v1.apk; do
-    if ! "$ADB" -s "$DEV" install -r -i dev.imranr.obtainium.debug \
+    if ! "$ADB" -s "$DEV" install -r -i org.cygnusx1.discoverium.debug \
       "$REPO_DIR/build/e2e_assets/$apk" >/dev/null; then
-      echo "Failed to pre-install $apk with Obtainium as installer" >&2
+      echo "Failed to pre-install $apk with Discoverium as installer" >&2
       exit 1
     fi
   done
@@ -170,6 +187,12 @@ fi
 run_suite() {
   local suite="$1"
   echo "=== $suite ==="
+  "$ADB" -s "$DEV" shell pm grant org.cygnusx1.discoverium.debug \
+    android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
+  # A fresh debug install cannot install packages until the user allows it,
+  # and asking opens Settings, which leaves the app in the background.
+  "$ADB" -s "$DEV" shell appops set org.cygnusx1.discoverium.debug \
+    REQUEST_INSTALL_PACKAGES allow >/dev/null 2>&1 || true
   if [ "$TARGET" = "phone" ] && $WITH_INSTALL && \
     [[ " ${INSTALL_SUITES[*]} " == *" $suite "* ]]; then
     reset_install_targets

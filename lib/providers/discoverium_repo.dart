@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:http/http.dart';
 import 'package:obtainium/core/logging/app_logger.dart';
 import 'package:obtainium/providers/settings_provider.dart';
+import 'package:obtainium/services/http_service.dart';
 import 'package:yaml/yaml.dart';
 
 /// How a repo entry supports Android TV, from its `tv` field: `no` (phones
@@ -178,7 +178,11 @@ class DiscoveriumRepo {
   }
 
   static Future<List<DiscoveriumApp>> _fetch(String branch) async {
-    final res = await get(Uri.parse(_appsUrl(branch)));
+    // Through HttpService, like every source request, so the repo is fetched
+    // with the same TLS trust and certificate pinning as the apps it lists.
+    final res = await HttpService().request('GET', null, {
+      'url': _appsUrl(branch),
+    });
     if (res.statusCode != 200) {
       throw StateError(
         'Failed to load Discoverium repo apps.yml ($branch): '

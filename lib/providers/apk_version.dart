@@ -683,14 +683,13 @@ class HttpApkByteSource implements ApkByteSource {
       // A compressed body would not be the bytes asked for.
       'accept-encoding': 'identity',
     }, Map<String, dynamic>.from(settings)..['url'] = url);
-    final client = response.value.key;
-    final res = response.value.value;
+    final res = response.value;
     try {
       // Anything but 206 means no usable range. A 200 is the whole APK, which
-      // is left unread: closing the client below abandons it.
+      // is left unread: cancelling the response below abandons it.
       if (res.statusCode != HttpStatus.partialContent) return null;
       final match = _contentRange.firstMatch(
-        res.headers['content-range']?.first.trim() ?? '',
+        res.headers['content-range']?.trim() ?? '',
       );
       if (match == null ||
           int.parse(match.group(1)!) != start ||
@@ -698,7 +697,7 @@ class HttpApkByteSource implements ApkByteSource {
         return null;
       }
       final body = BytesBuilder(copy: false);
-      await for (final chunk in res) {
+      await for (final chunk in res.stream) {
         body.add(chunk);
         if (body.length > end - start) return null;
       }
@@ -709,7 +708,7 @@ class HttpApkByteSource implements ApkByteSource {
         body: body.takeBytes(),
       );
     } finally {
-      client.close(force: true);
+      await cancelStreamedResponse(res);
     }
   }
 }

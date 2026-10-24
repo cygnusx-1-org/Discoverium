@@ -86,18 +86,38 @@ void main() {
       findsOneWidget,
       reason: 'the enabled track-only row keeps its mark-updated action',
     );
+    // Discoverium keeps the update button laid out but hidden when there is no
+    // update, so the row's text never moves; hidden is what counts.
+    bool updateActionShown(Finder tile) {
+      final visibilities = tester
+          .widgetList<Visibility>(
+            find.ancestor(
+              of: find.descendant(
+                of: tile,
+                matching: find.byIcon(Icons.check_rounded),
+              ),
+              matching: find.byType(Visibility),
+            ),
+          )
+          .toList();
+      return visibilities.isNotEmpty && visibilities.every((v) => v.visible);
+    }
+
     expect(
-      find.descendant(
-        of: disabledTile,
-        matching: find.byIcon(Icons.check_rounded),
-      ),
-      findsNothing,
+      updateActionShown(enabledTile),
+      isTrue,
+      reason: 'the enabled track-only row shows its mark-updated action',
+    );
+    expect(
+      updateActionShown(disabledTile),
+      isFalse,
       reason: 'disabled rows show no update action',
     );
 
-    // Re-enable from the app page.
+    // Re-enable from the app page. Discoverium holds the page's first paint
+    // for the release notes, so wait for the control rather than a fixed time.
     await tester.tap(disabledTile);
-    await pumpFor(tester, const Duration(seconds: 1));
+    await pumpUntil(tester, find.byTooltip('Enable app'), reason: 'app page');
     await tester.tap(find.byTooltip('Enable app'));
     await pumpFor(tester, const Duration(seconds: 1));
     await tester.tap(find.byTooltip('Disable app'));

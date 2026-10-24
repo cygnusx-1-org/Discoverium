@@ -474,7 +474,7 @@ class _AppPageState extends State<AppPage> {
     );
   }
 
-  AppBar _appScreenAppBar() => AppBar(
+  AppBar _appScreenAppBar({String? title}) => AppBar(
     automaticallyImplyLeading: widget.onClose == null,
     leading: widget.onClose != null
         ? IconButton(
@@ -482,6 +482,7 @@ class _AppPageState extends State<AppPage> {
             onPressed: _closePage,
           )
         : null,
+    title: title == null ? null : Text(title),
   );
 
   Widget _getPrimaryButton(
@@ -1652,7 +1653,7 @@ class _AppPageState extends State<AppPage> {
     final waitingForReleaseNotes = !_releaseNotesReady(app, settingsProvider);
 
     return Scaffold(
-      appBar: showAppWebpageFinal ? _appScreenAppBar() : null,
+      appBar: _appScreenAppBar(title: app?.name ?? tr('app')),
       floatingActionButton: showAppWebpageFinal
           ? FloatingActionButton(
               heroTag: null,
@@ -1702,10 +1703,8 @@ class _AppPageState extends State<AppPage> {
                             ? _tvScrollController
                             : null,
                         slivers: [
-                          SliverToBoxAdapter(
-                            child: SizedBox(
-                              height: MediaQuery.of(context).padding.top + 8,
-                            ),
+                          const SliverToBoxAdapter(
+                            child: SizedBox(height: AppSpacings.sm),
                           ),
                           _buildHeaderSection(app),
                           ..._buildRepoRenameSection(app, appsProvider),

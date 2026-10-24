@@ -48,12 +48,13 @@ void main() {
     await tester.tap(find.text('Cancel'));
     await pumpUntil(tester, find.text('E2E Pending 1'));
 
-    // Settings -> Appearance -> create a category.
+    // Settings -> Categories -> create a category. Discoverium gives
+    // categories a settings section of their own.
     await tester.tap(find.byTooltip('Settings'));
-    await pumpUntil(tester, find.text('Appearance'));
-    await tester.tap(find.text('Appearance'));
-    await pumpUntil(tester, find.text('App sort by'));
+    await pumpUntil(tester, find.text('Categories'));
+    await tester.tap(find.text('Categories'));
     final newCategoryChip = find.widgetWithText(ActionChip, '+');
+    await pumpUntil(tester, newCategoryChip, reason: 'categories section');
     await tester.scrollUntilVisible(
       newCategoryChip,
       300,
@@ -133,17 +134,17 @@ void main() {
       contains('e2e.app1'),
     );
 
-    // Settings -> Import/export.
+    // Settings -> export, then import: separate sections in Discoverium.
     await pressBack(tester);
-    await pumpUntil(tester, find.text('Import/export'));
-    await tester.tap(find.text('Import/export'));
+    await pumpUntil(tester, find.text('Discoverium export'));
+    await tester.tap(find.text('Discoverium export'));
     await pumpUntil(tester, find.text('Pick export directory'));
-    expect(find.text('Obtainium import'), findsOneWidget);
     await pressBack(tester);
+    await pumpUntil(tester, find.text('Discoverium import'));
 
-    // Settings -> App logs.
-    await pumpUntil(tester, find.text('App logs'));
-    await tester.tap(find.text('App logs'));
+    // Settings -> App logs, a shortcut under the settings menu.
+    await pumpUntil(tester, find.byTooltip('App logs'));
+    await tester.tap(find.byTooltip('App logs'));
     await pumpUntil(tester, find.text('App logs'));
     expect(find.byIcon(Icons.share_rounded).evaluate(), isNotEmpty);
     await pressBack(tester);

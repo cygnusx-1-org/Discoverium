@@ -16,7 +16,7 @@ void main() {
       markTestSkipped(
         'Needs the runner\'s setup (./tool/e2e.sh): generated APKs, the '
         '/slow/ server route and both test packages pre-installed with '
-        'Obtainium as their installer',
+        'Discoverium as their installer',
       );
       return;
     }
@@ -29,9 +29,9 @@ void main() {
     if (await getInstalledInfo(e2eTestPackageId) == null ||
         await getInstalledInfo(e2eSecondTestPackageId) == null) {
       markTestSkipped(
-        'Pre-install both test packages with Obtainium as their installer '
+        'Pre-install both test packages with Discoverium as their installer '
         '(the runner does this); e.g. adb install -r -i '
-        'dev.imranr.obtainium.debug build/e2e_assets/testapp-v1.apk',
+        'org.cygnusx1.discoverium.debug build/e2e_assets/testapp-v1.apk',
       );
       return;
     }
