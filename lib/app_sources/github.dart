@@ -32,6 +32,14 @@ DateTime? newestAssetDateFromRelease(dynamic release) {
   return dates.first;
 }
 
+bool isReleaseExcluded(
+  dynamic release, {
+  required bool includePrereleases,
+  required bool includeDrafts,
+}) =>
+    (!includePrereleases && release['prerelease'] == true) ||
+    (!includeDrafts && release['draft'] == true);
+
 class GitHub extends AppSource {
   static const int _fallbackCacheSeconds = 3600;
 
@@ -93,6 +101,13 @@ class GitHub extends AppSource {
       GeneratedFormSwitch(
         'includePrereleases',
         label: tr('includePrereleases'),
+        value: false,
+      ),
+    ],
+    [
+      GeneratedFormSwitch(
+        'includeDrafts',
+        label: tr('includeDrafts'),
         value: false,
       ),
     ],
@@ -632,14 +647,20 @@ class GitHub extends AppSource {
   List<ReleaseNotes> _recentReleaseNotes(
     List<dynamic> releases,
     bool includePrereleases,
+    bool includeDrafts,
     bool titleAsVersion,
   ) {
     final recent = <ReleaseNotes>[];
     for (final release in releases) {
       if (recent.length >= _recentReleaseNotesCount) break;
       if (release is! Map) continue;
-      if (release['draft'] == true) continue;
-      if (release['prerelease'] == true && !includePrereleases) continue;
+      if (isReleaseExcluded(
+        release,
+        includePrereleases: includePrereleases,
+        includeDrafts: includeDrafts,
+      )) {
+        continue;
+      }
       final tag = release['tag_name']?.toString();
       final name = release['name']?.toString();
       // Mirrors _selectGitHubTargetRelease exactly, including its fallback to
@@ -687,11 +708,11 @@ class GitHub extends AppSource {
         additionalSettings['invertReleaseNotesFilter'] == true;
     for (int i = 0; i < releases.length; i++) {
       if (!fallbackToOlderReleases && i > releaseSkipped) break;
-      if (!includePrereleases && releases[i]['prerelease'] == true) {
-        releaseSkipped++;
-        continue;
-      }
-      if (releases[i]['draft'] == true) {
+      if (isReleaseExcluded(
+        releases[i],
+        includePrereleases: includePrereleases,
+        includeDrafts: additionalSettings['includeDrafts'] == true,
+      )) {
         releaseSkipped++;
         continue;
       }
@@ -954,6 +975,7 @@ class GitHub extends AppSource {
         recentReleases: _recentReleaseNotes(
           releases,
           includePrereleases,
+          additionalSettings['includeDrafts'] == true,
           additionalSettings['releaseTitleAsVersion'] == true,
         ),
         isArchived: isArchived,
@@ -1082,9 +1104,9 @@ class GitHub extends AppSource {
   ///
   /// Only the newest few releases are fetched: the previous release is
   /// adjacent to the current one in all but pathological cases, and the full
-  /// list runs to hundreds of KB. Drafts are always skipped, and prereleases
-  /// are skipped unless the app opted into them, so this picks the same
-  /// releases an update check would.
+  /// list runs to hundreds of KB. Drafts and prereleases are skipped unless
+  /// the app opted into them, so this picks the same releases an update check
+  /// would.
   Future<({String version, String? notes})?> getPreviousRelease(
     String standardUrl,
     Map<String, dynamic> additionalSettings,
@@ -1106,11 +1128,12 @@ class GitHub extends AppSource {
     if (decoded is! List) return null;
     final wanted = _bareVersion(version);
     final includePrereleases = additionalSettings['includePrereleases'] == true;
+    final includeDrafts = additionalSettings['includeDrafts'] == true;
     final titleAsVersion = additionalSettings['releaseTitleAsVersion'] == true;
     var passedCurrent = false;
     for (final release in decoded) {
       if (release is! Map) continue;
-      if (release['draft'] == true) continue;
+      if (release['draft'] == true && !includeDrafts) continue;
       final tag = release['tag_name']?.toString();
       final name = release['name']?.toString();
       if (!passedCurrent) {

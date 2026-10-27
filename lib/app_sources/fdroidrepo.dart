@@ -452,6 +452,9 @@ class FDroidRepo extends AppSource {
     return null;
   }
 
+  /// This device's supported ABIs, in preference order.
+  Future<List<String>> getSupportedAbis() => getDeviceAbis();
+
   @override
   Future<APKDetails> getLatestAPKDetails(
     String standardUrl,
@@ -486,7 +489,7 @@ class FDroidRepo extends AppSource {
       // while it can run some.
       Set<String> abisOf(_FdroidVersion v) => v.nativecode.toSet();
       final deviceAbis = releases.any((v) => v.nativecode.isNotEmpty)
-          ? await getDeviceAbis()
+          ? await getSupportedAbis()
           : const <String>[];
       final runnable = ApkFilterService.runnableByAbi(
         releases,
@@ -527,6 +530,16 @@ class FDroidRepo extends AppSource {
       if (additionalSettings['autoApkFilterByArch'] == true) {
         selected = ApkFilterService.selectByAbi(selected, abisOf, deviceAbis);
       }
+      // A repo can publish several builds under one version name. Keep only
+      // the newest build per architecture, otherwise the default APK (the
+      // last one) is an older build.
+      final seenNativecodes = <String>{};
+      selected = selected
+          .where(
+            (v) =>
+                seenNativecodes.add((v.nativecode.toList()..sort()).join(' ')),
+          )
+          .toList();
       if (pickHighestVersionCode) {
         selected = [selected.first];
       }

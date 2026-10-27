@@ -224,7 +224,16 @@ class _TvDropdownMenuState<T> extends State<TvDropdownMenu<T>> {
   @override
   Widget build(BuildContext context) {
     final isTV = context.select<SettingsProvider, bool>((p) => p.isTV);
+    // DropdownMenu copies the selected entry's label into its field only when
+    // it is created and when initialSelection changes, so a label that changes
+    // under the same selection (a language switch) stays stale. Keying on the
+    // label rebuilds the field whenever it changes.
+    final selectedLabel = widget.dropdownMenuEntries
+        .where((e) => e.value == widget.initialSelection)
+        .firstOrNull
+        ?.label;
     final dropdown = DropdownMenu<T>(
+      key: ValueKey(selectedLabel),
       initialSelection: widget.initialSelection,
       dropdownMenuEntries: widget.dropdownMenuEntries,
       onSelected: widget.onSelected,

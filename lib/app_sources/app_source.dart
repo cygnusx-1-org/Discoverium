@@ -359,6 +359,12 @@ abstract class AppSource {
         label: tr('refreshBeforeDownload'),
       ),
     ],
+    [
+      GeneratedFormSwitch(
+        'detectionDateAsReleaseDate',
+        label: tr('detectionDateAsReleaseDate'),
+      ),
+    ],
   ];
 
   List<List<GeneratedFormItem>> get _appAppSettingFormItems => [

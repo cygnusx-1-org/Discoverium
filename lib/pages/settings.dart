@@ -1563,6 +1563,9 @@ class _ColourSchemeDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // tr() registers no dependency and a const widget is not rebuilt with its
+    // parent, so depend on the locale to be relabelled by a language switch.
+    context.locale;
     final colourSchemeMode = context.select<SettingsProvider, ColourSchemeMode>(
       (p) => p.colourSchemeMode,
     );
