@@ -9,7 +9,7 @@ body:
       value: |
         ## Prerequisites
 
-        - Please ensure your request is not part of an [existing issue](https://github.com/ImranR98/Obtainium/issues?q=is%3Aissue%20label%3Abug).
+        - Please ensure your request is not part of an [existing issue](https://github.com/cygnusx-1-org/Discoverium/issues?q=is%3Aissue%20label%3Abug).
         - Please ensure you have checked the [Obtainium Wiki](https://wiki.obtainium.imranr.dev/).
         - Please ensure your request is an actual bug and not intended behaviour (this is frequently the case for issues involving version strings and the HTML source).
 
@@ -61,8 +61,8 @@ body:
   - type: input
     id: obtainium_version
     attributes:
-      label: Obtainium Version
-      placeholder: '1.6.10'
+      label: Discoverium Version
+      placeholder: '1.7.31'
     validations:
       required: true
 
