@@ -22,6 +22,26 @@ import 'package:obtainium/utils/nav_helper.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+/// The app IDs a bulk action may obtain without showing the confirmation
+/// dialog. Non-installed apps count only when the user selected them: tracking
+/// an app is not a request to install it. An empty result means the dialog
+/// must be shown instead.
+Set<String> unconfirmedBulkObtainIds(
+  List<String> existingUpdateIds,
+  List<String> newInstallIds, {
+  required bool hasSelection,
+}) => <String>{...existingUpdateIds, if (hasSelection) ...newInstallIds};
+
+/// [ids] without track-only apps. A bulk action must leave those alone: marking
+/// one as updated would claim a version that isn't installed, so that only
+/// happens when the user explicitly marks it as updated.
+List<String> withoutTrackOnlyApps(
+  Iterable<String> ids,
+  Map<String, AppInMemory> apps,
+) => ids
+    .where((id) => apps[id]?.app.settings.getBool('trackOnly') == false)
+    .toList();
+
 class AppsPage extends StatefulWidget {
   const AppsPage({
     super.key,
@@ -161,20 +181,20 @@ class AppsPageState extends State<AppsPage> {
     return result;
   }
 
-  (List<String>, List<String>, List<String>) _computeUpdateIdSets(
+  (List<String>, List<String>) _computeUpdateIdSets(
     AppsProvider appsProvider,
     Set<String> existingUpdates,
     Set<String> selectedAppIds,
     Set<String> listedAppIdSet,
   ) {
-    var existingUpdateIdsAllOrSelected = existingUpdates
+    final existingUpdateIdsAllOrSelected = existingUpdates
         .where(
           (element) => selectedAppIds.isEmpty
               ? listedAppIdSet.contains(element)
               : selectedAppIds.contains(element),
         )
         .toList();
-    var newInstallIdsAllOrSelected = appsProvider
+    final newInstallIdsAllOrSelected = appsProvider
         .findAppIdsWithPendingUpdates(nonInstalledOnly: true)
         .where(
           (element) => selectedAppIds.isEmpty
@@ -183,29 +203,9 @@ class AppsPageState extends State<AppsPage> {
         )
         .toList();
 
-    final List<String> trackOnlyUpdateIdsAllOrSelected = [];
-    for (var id in existingUpdateIdsAllOrSelected) {
-      if (appsProvider.apps[id]!.app.settings.getBool('trackOnly')) {
-        trackOnlyUpdateIdsAllOrSelected.add(id);
-      }
-    }
-    for (var id in newInstallIdsAllOrSelected) {
-      if (appsProvider.apps[id]!.app.settings.getBool('trackOnly') &&
-          !trackOnlyUpdateIdsAllOrSelected.contains(id)) {
-        trackOnlyUpdateIdsAllOrSelected.add(id);
-      }
-    }
-    existingUpdateIdsAllOrSelected = existingUpdateIdsAllOrSelected
-        .where((id) => !trackOnlyUpdateIdsAllOrSelected.contains(id))
-        .toList();
-    newInstallIdsAllOrSelected = newInstallIdsAllOrSelected
-        .where((id) => !trackOnlyUpdateIdsAllOrSelected.contains(id))
-        .toList();
-
     return (
-      existingUpdateIdsAllOrSelected,
-      newInstallIdsAllOrSelected,
-      trackOnlyUpdateIdsAllOrSelected,
+      withoutTrackOnlyApps(existingUpdateIdsAllOrSelected, appsProvider.apps),
+      withoutTrackOnlyApps(newInstallIdsAllOrSelected, appsProvider.apps),
     );
   }
 
@@ -281,30 +281,27 @@ class AppsPageState extends State<AppsPage> {
     BuildContext context,
     List<String> existingUpdateIdsAllOrSelected,
     List<String> newInstallIdsAllOrSelected,
-    List<String> trackOnlyUpdateIdsAllOrSelected,
   ) {
     return appsProvider.areDownloadsRunning() ||
             (existingUpdateIdsAllOrSelected.isEmpty &&
-                newInstallIdsAllOrSelected.isEmpty &&
-                trackOnlyUpdateIdsAllOrSelected.isEmpty)
+                newInstallIdsAllOrSelected.isEmpty)
         ? null
         : () {
             settingsProvider.heavyImpact();
-            if (settingsProvider.skipBulkUpdateConfirmation) {
-              // The setting is "skip update/install confirmation dialog", so
-              // new installs must be included too, not only updates.
-              final ids = <String>{
-                ...existingUpdateIdsAllOrSelected,
-                ...newInstallIdsAllOrSelected,
-                ...trackOnlyUpdateIdsAllOrSelected,
-              };
+            final ids = settingsProvider.skipBulkUpdateConfirmation
+                ? unconfirmedBulkObtainIds(
+                    existingUpdateIdsAllOrSelected,
+                    newInstallIdsAllOrSelected,
+                    hasSelection: selectedAppIds.isNotEmpty,
+                  )
+                : const <String>{};
+            if (ids.isNotEmpty) {
               _obtainApps(ids.toList(), context);
             } else {
               _showObtainDialog(
                 context,
                 existingUpdateIdsAllOrSelected,
                 newInstallIdsAllOrSelected,
-                trackOnlyUpdateIdsAllOrSelected,
               );
             }
           };
@@ -340,19 +337,14 @@ class AppsPageState extends State<AppsPage> {
     BuildContext context,
     List<String> existingUpdateIds,
     List<String> newInstallIds,
-    List<String> trackOnlyUpdateIds,
   ) {
-    final totalApps =
-        existingUpdateIds.length +
-        newInstallIds.length +
-        trackOnlyUpdateIds.length;
+    final totalApps = existingUpdateIds.length + newInstallIds.length;
     showDialog<Set<String>>(
       context: context,
       builder: (BuildContext ctx) {
         return _BulkUpdateDialog(
           existingUpdateIds: existingUpdateIds,
           newInstallIds: newInstallIds,
-          trackOnlyUpdateIds: trackOnlyUpdateIds,
           totalApps: totalApps,
           apps: appsProvider.apps,
         );
@@ -648,40 +640,29 @@ class AppsPageState extends State<AppsPage> {
     );
   }
 
-  /// Splits [apps] into existing updates, new installs, and track-only
-  /// updates. Track-only apps never appear in the other two groups.
-  (List<String>, List<String>, List<String>) _classifyForUpdate(
-    Iterable<App> apps,
-  ) {
+  /// Splits [apps] into existing updates and new installs. Track-only apps
+  /// appear in neither.
+  (List<String>, List<String>) _classifyForUpdate(Iterable<App> apps) {
     final existingUpdateIds = <String>[];
     final newInstallIds = <String>[];
-    final trackOnlyUpdateIds = <String>[];
     for (final app in apps) {
-      if (app.disabled) continue;
-      final trackOnly = app.settings.getBool('trackOnly');
-      if (trackOnly) {
-        if (isAppUpdateable(app, settingsProvider)) {
-          trackOnlyUpdateIds.add(app.id);
-        }
-      } else if (app.installedVersion == null) {
+      if (app.disabled || app.settings.getBool('trackOnly')) continue;
+      if (app.installedVersion == null) {
         newInstallIds.add(app.id);
       } else if (isAppUpdateable(app, settingsProvider)) {
         existingUpdateIds.add(app.id);
       }
     }
-    return (existingUpdateIds, newInstallIds, trackOnlyUpdateIds);
+    return (existingUpdateIds, newInstallIds);
   }
 
   void showMoreOptionsBottomSheet(BuildContext context, Set<App> selectedApps) {
     final isPinned = selectedApps.where((e) => e.pinned).isNotEmpty;
     final isDisabled = selectedApps.where((e) => e.disabled).isNotEmpty;
 
-    final (existingUpdateIds, newInstallIds, trackOnlyUpdateIds) =
-        _classifyForUpdate(selectedApps);
+    final (existingUpdateIds, newInstallIds) = _classifyForUpdate(selectedApps);
     final hasObtainActions =
-        existingUpdateIds.isNotEmpty ||
-        newInstallIds.isNotEmpty ||
-        trackOnlyUpdateIds.isNotEmpty;
+        existingUpdateIds.isNotEmpty || newInstallIds.isNotEmpty;
 
     showModalBottomSheet(
       context: context,
@@ -750,7 +731,6 @@ class AppsPageState extends State<AppsPage> {
                           context,
                           existingUpdateIds,
                           newInstallIds,
-                          trackOnlyUpdateIds,
                         );
                       },
                     ),
@@ -1100,7 +1080,6 @@ class AppsPageState extends State<AppsPage> {
     SettingsProvider settingsProvider,
     List<String> existingUpdateIdsAllOrSelected,
     List<String> newInstallIdsAllOrSelected,
-    List<String> trackOnlyUpdateIdsAllOrSelected,
   ) {
     final mode = settingsProvider.actionBannerMode;
     if (mode == ActionBannerMode.none) {
@@ -1108,8 +1087,7 @@ class AppsPageState extends State<AppsPage> {
     }
     final pendingCount =
         existingUpdateIdsAllOrSelected.length +
-        newInstallIdsAllOrSelected.length +
-        trackOnlyUpdateIdsAllOrSelected.length;
+        newInstallIdsAllOrSelected.length;
     if (pendingCount < 2) {
       return const SliverToBoxAdapter(child: SizedBox(width: double.infinity));
     }
@@ -1121,7 +1099,6 @@ class AppsPageState extends State<AppsPage> {
             context,
             existingUpdateIdsAllOrSelected,
             newInstallIdsAllOrSelected,
-            trackOnlyUpdateIdsAllOrSelected,
           );
     final cs = Theme.of(context).colorScheme;
     return SliverToBoxAdapter(
@@ -1262,7 +1239,6 @@ class AppsPageState extends State<AppsPage> {
     final (
       existingUpdateIdsAllOrSelected,
       newInstallIdsAllOrSelected,
-      trackOnlyUpdateIdsAllOrSelected,
     ) = _computeUpdateIdSets(
       appsProvider,
       existingUpdates,
@@ -1359,7 +1335,6 @@ class AppsPageState extends State<AppsPage> {
                       settingsProvider,
                       existingUpdateIdsAllOrSelected,
                       newInstallIdsAllOrSelected,
-                      trackOnlyUpdateIdsAllOrSelected,
                     ),
                   // On TV the actions sit above the list, where the remote
                   // reaches them without scrolling past every app.
@@ -1482,14 +1457,12 @@ class _RefreshProgressBar extends StatelessWidget {
 class _BulkUpdateDialog extends StatefulWidget {
   final List<String> existingUpdateIds;
   final List<String> newInstallIds;
-  final List<String> trackOnlyUpdateIds;
   final int totalApps;
   final Map<String, AppInMemory> apps;
 
   const _BulkUpdateDialog({
     required this.existingUpdateIds,
     required this.newInstallIds,
-    required this.trackOnlyUpdateIds,
     required this.totalApps,
     required this.apps,
   });
@@ -1504,7 +1477,7 @@ class _BulkUpdateDialogState extends State<_BulkUpdateDialog> {
   @override
   void initState() {
     super.initState();
-    selectedIds = {...widget.existingUpdateIds, ...widget.trackOnlyUpdateIds};
+    selectedIds = {...widget.existingUpdateIds};
     if (widget.existingUpdateIds.isEmpty) {
       selectedIds.addAll(widget.newInstallIds);
     }
@@ -1517,11 +1490,7 @@ class _BulkUpdateDialogState extends State<_BulkUpdateDialog> {
       if (allSelected) {
         selectedIds.clear();
       } else {
-        selectedIds = {
-          ...widget.existingUpdateIds,
-          ...widget.newInstallIds,
-          ...widget.trackOnlyUpdateIds,
-        };
+        selectedIds = {...widget.existingUpdateIds, ...widget.newInstallIds};
       }
     });
   }
@@ -1658,10 +1627,6 @@ class _BulkUpdateDialogState extends State<_BulkUpdateDialog> {
             ...widget.existingUpdateIds.map((id) => _appCheckRow(id, cs)),
             _sectionHeader(tr('nonInstalledApps'), widget.newInstallIds, cs),
             ...widget.newInstallIds.map((id) => _appCheckRow(id, cs)),
-            if (widget.trackOnlyUpdateIds.isNotEmpty) ...[
-              _sectionHeader(tr('trackOnly'), widget.trackOnlyUpdateIds, cs),
-              ...widget.trackOnlyUpdateIds.map((id) => _appCheckRow(id, cs)),
-            ],
           ],
         ),
       ),
