@@ -141,16 +141,19 @@ class _TvTextFieldFocusState extends State<TvTextFieldFocus> {
         },
         child: ListenableBuilder(
           listenable: _outerFocus,
-          builder: (context, child) => Container(
-            decoration: _outerFocus.hasFocus && !_activated
-                ? BoxDecoration(
-                    border: Border.all(
+          // A foreground ring, as in TvFocusRing: a Container's border also
+          // pads its child, so the focused field would shift and grow.
+          builder: (context, child) => DecoratedBox(
+            position: DecorationPosition.foreground,
+            decoration: BoxDecoration(
+              border: _outerFocus.hasFocus && !_activated
+                  ? Border.all(
                       color: Theme.of(context).colorScheme.primary,
                       width: 2,
-                    ),
-                    borderRadius: BorderRadius.circular(widget.borderRadius),
-                  )
-                : null,
+                    )
+                  : null,
+              borderRadius: BorderRadius.circular(widget.borderRadius),
+            ),
             child: ExcludeFocus(excluding: !_activated, child: widget.child),
           ),
         ),
@@ -164,6 +167,24 @@ class _GeneratedFormState extends State<GeneratedForm> {
   final Map<String, TextEditingController> _textControllers = {};
   final Map<String, GlobalKey<FormFieldState>> _fieldKeys = {};
   final Map<String, int> _subFormGenerations = {};
+
+  /// Password fields unmasked with their eye button. Cleared as soon as the
+  /// app goes inactive, so a revealed token is masked again by the time the
+  /// user comes back.
+  final Set<String> _revealedKeys = {};
+  AppLifecycleListener? _lifecycleListener;
+
+  void _toggleRevealed(String key) {
+    _lifecycleListener ??= AppLifecycleListener(onInactive: _hideRevealed);
+    setState(() {
+      if (!_revealedKeys.remove(key)) _revealedKeys.add(key);
+    });
+  }
+
+  void _hideRevealed() {
+    if (_revealedKeys.isEmpty) return;
+    setState(() => _revealedKeys.clear());
+  }
 
   InputDecoration _fieldDecoration({
     required String labelText,
@@ -191,6 +212,20 @@ class _GeneratedFormState extends State<GeneratedForm> {
       );
     }
     return null;
+  }
+
+  Widget? _buildTextSuffixIcon(GeneratedFormTextField formItem) {
+    final trailing =
+        formItem.suffixIcon ?? _buildHelpSuffixIcon(formItem.helpUrl);
+    if (!formItem.password) return trailing;
+    final revealed = _revealedKeys.contains(formItem.key);
+    final toggle = IconButton(
+      icon: Icon(revealed ? Icons.visibility_off : Icons.visibility),
+      tooltip: tr(revealed ? 'hideToken' : 'showToken'),
+      onPressed: () => _toggleRevealed(formItem.key),
+    );
+    if (trailing == null) return toggle;
+    return Row(mainAxisSize: MainAxisSize.min, children: [toggle, trailing]);
   }
 
   void notifyFormChange({bool forceInvalid = false, bool isBuilding = false}) {
@@ -234,7 +269,8 @@ class _GeneratedFormState extends State<GeneratedForm> {
         final textField = TextFormField(
           controller: ctrl,
           focusNode: focusNode,
-          obscureText: formItem.password,
+          obscureText:
+              formItem.password && !_revealedKeys.contains(formItem.key),
           autocorrect: !formItem.password,
           enableSuggestions: !formItem.password,
           key: formFieldKey,
@@ -248,8 +284,7 @@ class _GeneratedFormState extends State<GeneratedForm> {
           decoration: _fieldDecoration(
             labelText: tr(formItem.label) + (formItem.required ? ' *' : ''),
             hintText: formItem.hint,
-            suffixIcon:
-                formItem.suffixIcon ?? _buildHelpSuffixIcon(formItem.helpUrl),
+            suffixIcon: _buildTextSuffixIcon(formItem),
           ),
           minLines: formItem.max <= 1 ? null : formItem.max,
           maxLines: formItem.max <= 1 ? 1 : formItem.max,
@@ -377,6 +412,7 @@ class _GeneratedFormState extends State<GeneratedForm> {
     _textControllers.clear();
     _fieldKeys.clear();
     _subFormGenerations.clear();
+    _revealedKeys.clear();
     values = {
       for (final row in widget.items)
         for (final item in row)
@@ -469,6 +505,7 @@ class _GeneratedFormState extends State<GeneratedForm> {
       c.dispose();
     }
     _fieldKeys.clear();
+    _lifecycleListener?.dispose();
     super.dispose();
   }
 
