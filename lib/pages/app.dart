@@ -1042,7 +1042,9 @@ class _AppPageState extends State<AppPage> {
                 ? _releaseNotesPlaceholder(context, sections[i].placeholder)
                 : AppMarkdown(
                     data: sections[i].notes!,
-                    relativeLinkBase: app.app.url,
+                    resolveLink: (href) =>
+                        resolveChangeLogLink(app.app, source, href),
+                    softLineBreak: true,
                   ),
           ],
         ),

@@ -970,6 +970,7 @@ class GitHub extends AppSource {
         _appNamesWithRepoMetadata(standardUrl, repoEntry),
         releaseDate: releaseDate,
         changeLog: changeLog.isEmpty ? null : changeLog,
+        releaseUrl: targetRelease['html_url'] as String?,
         allAssetUrls:
             targetRelease['allAssetUrls'] as List<MapEntry<String, String>>,
         recentReleases: _recentReleaseNotes(

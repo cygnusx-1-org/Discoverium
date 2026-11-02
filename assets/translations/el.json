@@ -37,6 +37,14 @@
     "other": "…και {} ακόμη σφάλματα"
   },
   "andOneMoreError": "…και 1 ακόμη σφάλμα",
+  "androidCertStore": "Android certificate store",
+  "androidCertStoreHelp": "Use Android's certificate store for HTTPS requests, including certificates you add or disable in Android settings and Android's proxy settings. This requires dynamic code loading; when it is blocked or disabled, Discoverium uses Flutter's fallback network client.",
+  "androidCertStoreUnavailable": "Unavailable (dynamic code loading is blocked)",
+  "androidCertStoreUnavailableHelp": "Allow dynamic code loading via memory for Discoverium in the app's exploit protection settings to enable this. On GrapheneOS: Settings → Apps → Discoverium → Exploit protection.",
+  "androidCertStoreWarningP1": "Your operating system is blocking dynamic code loading for Discoverium. Discoverium's normal network client needs it, so Discoverium switched to its fallback network client to avoid crashing.",
+  "androidCertStoreWarningP2": "The fallback does not use Android's certificate store. Certificates you added or disabled in Android settings, and Android's proxy settings, will not apply. Certificate pinning still works.",
+  "androidCertStoreWarningP3": "To use Android's certificate store, allow dynamic code loading via memory for Discoverium in the app's exploit protection settings, then reopen Discoverium. On GrapheneOS: Settings → Apps → Discoverium → Exploit protection.",
+  "androidCertStoreWarningTitle": "Android certificate store unavailable",
   "apk": {
     "one": "{} APK",
     "other": "{} APK"
@@ -430,6 +438,7 @@
   "onlyWorksWithNonVersionDetectApps": "Λειτουργεί μόνο για εφαρμογές με απενεργοποιημένη ανίχνευση έκδοσης.",
   "open": "Open",
   "openApp": "Άνοιγμα {}",
+  "openAppSettings": "Open app settings",
   "openReleasePage": "Άνοιγμα σελίδας έκδοσης",
   "overrideSource": "Παράκαμψη πηγής",
   "parallelDownloads": "Να επιτρέπονται παράλληλες λήψεις",
