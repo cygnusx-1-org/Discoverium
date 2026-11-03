@@ -461,30 +461,38 @@ class DownloadCancelButton extends StatelessWidget {
 /// controls in line with [focused] (overlapping it horizontally), then the one
 /// whose left edge is closest. Unlike Flutter's own traversal it never picks
 /// one from a neighbouring pane.
+///
+/// With [within], a control is judged by the part of it inside that rect
+/// alone, and one wholly outside it is passed over: a card the screen's edge
+/// cuts off is as near as the part of it that shows.
 FocusNode? tvNextInPane(
   FocusNode pane,
   FocusNode focused, {
   required bool down,
   bool Function(FocusNode node)? where,
+  Rect? within,
 }) {
   // Controls whose near edges are this close count as one row.
   const rowSlack = 16.0;
   final from = focused.rect;
   double gapTo(Rect r) => down ? r.top - from.bottom : from.top - r.bottom;
-  final ahead = <FocusNode>[];
+  final ahead = <(FocusNode, Rect)>[];
   var nearestGap = double.infinity;
   for (final node in pane.traversalDescendants) {
     if (node == focused || (where != null && !where(node))) continue;
-    final r = node.rect;
+    var r = node.rect;
+    if (within != null) {
+      if (!r.overlaps(within)) continue;
+      r = r.intersect(within);
+    }
     if (down ? r.top < from.bottom - 1 : r.bottom > from.top + 1) continue;
-    ahead.add(node);
+    ahead.add((node, r));
     if (gapTo(r) < nearestGap) nearestGap = gapTo(r);
   }
   FocusNode? best;
   var bestInLine = false;
   var bestSideways = double.infinity;
-  for (final node in ahead) {
-    final r = node.rect;
+  for (final (node, r) in ahead) {
     if (gapTo(r) > nearestGap + rowSlack) continue;
     final inLine = r.left < from.right && r.right > from.left;
     final sideways = (r.left - from.left).abs();

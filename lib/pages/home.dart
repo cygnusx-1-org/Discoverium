@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:app_links/app_links.dart';
-import 'package:easy_localization/easy_localization.dart';
+import 'package:easy_localization/easy_localization.dart' hide TextDirection;
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:obtainium/components/app_list_tile.dart';
 import 'package:obtainium/components/dcl_warning_dialog.dart';
 import 'package:obtainium/components/generated_form_renderer.dart';
 import 'package:obtainium/components/ui_widgets.dart';
@@ -38,6 +40,9 @@ class _HomePageState extends State<HomePage> {
 
   final GlobalKey<AppsPageState> appsPageKey = GlobalKey<AppsPageState>();
   String? selectedAppId;
+
+  /// The app list's half of the TV two-pane layout.
+  final FocusNode _tvListPaneFocus = FocusNode(debugLabel: 'app list pane');
   bool appsSelecting = false;
 
   @override
@@ -70,6 +75,52 @@ class _HomePageState extends State<HomePage> {
   void clearSelectedApp() {
     selectedAppId = null;
     setState(() {});
+  }
+
+  /// On TV, coming back to the app list from the detail pane (Left, or Right
+  /// where the layout runs right to left) lands on the row of the app the pane
+  /// shows, scrolled into view, rather than on whichever row sits level with
+  /// the control focus left. The key is still held down while focus arrives,
+  /// which tells this apart from focus arriving any other way. A row the list
+  /// has not built, being scrolled far off, is left to Flutter's own choice.
+  void _onTvListPaneFocusChange(bool hasFocus) {
+    final appId = selectedAppId;
+    if (!hasFocus || appId == null) return;
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    if (!HardwareKeyboard.instance.logicalKeysPressed.contains(
+      rtl ? LogicalKeyboardKey.arrowRight : LogicalKeyboardKey.arrowLeft,
+    )) {
+      return;
+    }
+    // The row itself rather than the update button inside it, so the tallest
+    // of the app's controls; and of an app listed under several groups, the
+    // row nearest where focus landed.
+    final landed = FocusManager.instance.primaryFocus?.rect.center;
+    FocusNode? row;
+    for (final node in _tvListPaneFocus.traversalDescendants) {
+      final tile = node.context?.findAncestorWidgetOfExactType<AppListTile>();
+      if (tile == null || tile.appInMemory.app.id != appId) continue;
+      if (row == null ||
+          node.rect.height > row.rect.height + 1 ||
+          (node.rect.height > row.rect.height - 1 &&
+              landed != null &&
+              (node.rect.center.dy - landed.dy).abs() <
+                  (row.rect.center.dy - landed.dy).abs())) {
+        row = node;
+      }
+    }
+    final rowContext = row?.context;
+    if (row == null || rowContext == null) return;
+    row.requestFocus();
+    // Whichever side of the screen it is off, bring all of it into view.
+    Scrollable.ensureVisible(
+      rowContext,
+      alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+    );
+    Scrollable.ensureVisible(
+      rowContext,
+      alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+    );
   }
 
   void setAppsSelecting(bool has) {
@@ -338,6 +389,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _linkSubscription?.cancel();
+    _tvListPaneFocus.dispose();
     super.dispose();
   }
 
@@ -430,9 +482,11 @@ class _HomePageState extends State<HomePage> {
             // On TV only Right leads to the detail pane, never Down off the
             // bottom of the list.
             child: Focus(
+              focusNode: _tvListPaneFocus,
               canRequestFocus: false,
               skipTraversal: true,
               onKeyEvent: isTV ? tvPaneUpDown : null,
+              onFocusChange: isTV ? _onTvListPaneFocusChange : null,
               child: Scaffold(
                 backgroundColor: Colors.transparent,
                 body: appsPage,

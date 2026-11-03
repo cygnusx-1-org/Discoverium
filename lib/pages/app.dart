@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:easy_localization/easy_localization.dart';
+import 'package:easy_localization/easy_localization.dart' hide TextDirection;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:obtainium/app_sources/github.dart';
@@ -1491,41 +1491,84 @@ class _AppPageState extends State<AppPage> {
     );
   }
 
-  /// On TV, coming over from the app list with Right always starts at the top
-  /// card, with the page scrolled back to its start. Right is still held down
-  /// while focus arrives, which tells this apart from focus coming back from a
-  /// dialog opened here.
+  /// Whether [node] is in the scrolling details rather than the action bar.
+  /// Details scrolled off the bottom sit underneath the bar, so going by
+  /// position alone the bar's buttons would always look nearer.
+  bool _inDetails(FocusNode node) {
+    var found = false;
+    node.context?.visitAncestorElements((element) {
+      found = element.widget.key == _scrollViewKey;
+      return !found;
+    });
+    return found;
+  }
+
+  /// On TV, coming over from the app list (Right, or Left where the layout
+  /// runs right to left) always starts on the first control of the action bar,
+  /// with the page scrolled back to its start: a long page of details would
+  /// otherwise stand between the remote and the bar. The bar is walked on from
+  /// there, and Up reads the details from the bottom of the screen. The key is
+  /// still held down while focus arrives, which tells this apart from focus
+  /// coming back from a dialog opened here.
   void _onTvPaneFocusChange(bool hasFocus) {
+    final rtl = Directionality.of(context) == TextDirection.rtl;
     if (!hasFocus ||
         !settingsProvider.isTV ||
         !HardwareKeyboard.instance.logicalKeysPressed.contains(
-          LogicalKeyboardKey.arrowRight,
+          rtl ? LogicalKeyboardKey.arrowLeft : LogicalKeyboardKey.arrowRight,
         )) {
       return;
     }
+    // The bar's first control is the one at its leading edge.
+    double lead(Rect r) => rtl ? -r.right : r.left;
+    FocusNode? first;
     TvCardFocusNode? top;
     for (final node in _tvPaneFocus.traversalDescendants) {
-      if (node is TvCardFocusNode &&
+      if (!_inDetails(node)) {
+        if (first == null ||
+            lead(node.rect) < lead(first.rect) ||
+            (lead(node.rect) == lead(first.rect) &&
+                node.rect.top < first.rect.top)) {
+          first = node;
+        }
+      } else if (node is TvCardFocusNode &&
           (top == null || node.rect.top < top.rect.top)) {
         top = node;
       }
     }
-    if (top == null) return;
+    // A bar with nothing to press yet (everything disabled mid-update) starts
+    // on the top card instead.
+    final start = first ?? top;
+    if (start == null) return;
     if (_tvScrollController.hasClients) {
       _tvScrollController.jumpTo(_tvScrollController.position.minScrollExtent);
     }
-    top.requestFocus();
+    // Brings it into view should the bar's row of buttons be scrolled along.
+    tvMoveFocus(start, down: false);
   }
 
   /// On TV a remote scrolls only by moving focus, so every card is a remote
   /// stop (see [_buildSection]), and Up and Down move from one to the next,
   /// scrolling it into view. A card too tall for the screen is read to its
-  /// end, a step per press, before focus moves on. Like the app list beside
-  /// it, the page keeps Up and Down to itself; the list is reached with Left.
+  /// end, a step per press, before focus moves on. Up from the action bar goes
+  /// to whatever shows just above it, even a card the bar cuts off part-way,
+  /// since the bar is reached at the top of the page as well as at its end.
+  /// Like the app list beside it, the page keeps Up and Down to itself; the
+  /// list is reached with Left.
   KeyEventResult _handleTvScrollKey(FocusNode pane, KeyEvent event) {
     final down = tvUpDown(event);
     final focused = FocusManager.instance.primaryFocus;
     if (down == null || focused == null) return KeyEventResult.ignored;
+    // Flutter's traversal remembers Left and Right moves so the opposite key
+    // can retrace them, and forgets them when Up or Down comes next. Up and
+    // Down are handled here instead, so forget them here too: kept, they would
+    // send the next Left from the bar back to a button an earlier Right left,
+    // when that button is where focus already is, swallowing the press.
+    final scope = focused.nearestScope;
+    final focusedContext = focused.context;
+    if (scope != null && focusedContext != null) {
+      FocusTraversalGroup.maybeOf(focusedContext)?.invalidateScopeData(scope);
+    }
     final viewportBox = _scrollViewKey.currentContext?.findRenderObject();
     if (viewportBox is! RenderBox ||
         !viewportBox.hasSize ||
@@ -1534,28 +1577,24 @@ class _AppPageState extends State<AppPage> {
       if (next != null) tvMoveFocus(next, down: down);
       return KeyEventResult.handled;
     }
-    // Whether [node] is in the scrolling details rather than the action bar.
-    // Details scrolled off the bottom sit underneath the bar, so going by
-    // position alone the bar's buttons would always look nearer.
-    bool inDetails(FocusNode node) {
-      var found = false;
-      node.context?.visitAncestorElements((element) {
-        found = element.widget.key == _scrollViewKey;
-        return !found;
-      });
-      return found;
-    }
-
+    final inBar = !_inDetails(focused);
     // Nothing below the action bar.
-    if (down && !inDetails(focused)) return KeyEventResult.handled;
+    if (down && inBar) return KeyEventResult.handled;
     final position = _tvScrollController.position;
     final viewport = viewportBox.localToGlobal(Offset.zero) & viewportBox.size;
     final canScroll = down
         ? position.pixels < position.maxScrollExtent
         : position.pixels > position.minScrollExtent;
     // The details come first; the action bar only once they have run out.
+    // From the bar, only the details on screen count, by the part that shows.
     final next =
-        tvNextInPane(pane, focused, down: down, where: inDetails) ??
+        tvNextInPane(
+          pane,
+          focused,
+          down: down,
+          where: _inDetails,
+          within: inBar ? viewport : null,
+        ) ??
         (canScroll ? null : tvNextInPane(pane, focused, down: down));
     final readingOn =
         focused is TvCardFocusNode &&
@@ -1576,7 +1615,10 @@ class _AppPageState extends State<AppPage> {
       next.requestFocus();
       final nextContext = next.context;
       if (nextContext != null) {
-        if (next.rect.height <= viewport.height) {
+        // Coming up from the bar onto a card whose start already shows, there
+        // is nothing to bring into view: it reads on downwards from there.
+        if (next.rect.height <= viewport.height ||
+            (!down && next.rect.top >= viewport.top - 1)) {
           Scrollable.ensureVisible(
             nextContext,
             alignmentPolicy: down
