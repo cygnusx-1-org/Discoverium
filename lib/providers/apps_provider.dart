@@ -149,10 +149,71 @@ enum DownloadedDirType { xapk, zip, tarball, splitApks }
 
 class DownloadedDir {
   String appId;
+
+  /// The downloaded archive, or the base APK of a [DownloadedDirType.splitApks]
+  /// set.
   File file;
+
+  /// The working copy that gets installed. It is rebuilt from the cached
+  /// download on every attempt, so it can always be thrown away.
   Directory extracted;
   DownloadedDirType type;
-  DownloadedDir(this.appId, this.file, this.extracted, this.type);
+
+  /// The split downloads of a [DownloadedDirType.splitApks] set, which stay in
+  /// the download cache next to [file].
+  List<File> splits;
+  DownloadedDir(
+    this.appId,
+    this.file,
+    this.extracted,
+    this.type, {
+    this.splits = const [],
+  });
+
+  /// Everything this download left in the download cache.
+  List<File> get cachedFiles => [file, ...splits];
+}
+
+/// How long a download may sit in the cache unused before it is removed.
+const Duration staleDownloadAge = Duration(days: 7);
+
+// A cached download is named `<app id>-<hash of its URL>`, followed by an
+// extension, a split number, `.part` while it is incomplete, or `-dir` for the
+// directory a bundle is unpacked into.
+final RegExp _downloadCacheEntryName = RegExp(r'^.+--?\d+([.\- ].*)?$');
+
+/// Whether [name] is one this app gives its downloads. The download cache can
+/// be the root of the external cache directory, which holds other things too
+/// (the icon cache for one), so nothing else may be swept.
+bool isDownloadCacheEntryName(String name) =>
+    _downloadCacheEntryName.hasMatch(name);
+
+/// Deletes the downloads in [dir] that were last written before [cutoff]:
+/// files a failed or cancelled install left for a retry that never came (#69),
+/// abandoned partial downloads, and unpacked bundles.
+///
+/// Stops as soon as [isBusy] reports a download under way, which may be about
+/// to reuse one of them.
+Future<void> sweepStaleDownloads(
+  Directory dir,
+  DateTime cutoff, {
+  bool Function()? isBusy,
+}) async {
+  await for (final entity in dir.list()) {
+    if (isBusy?.call() ?? false) return;
+    if (!isDownloadCacheEntryName(entity.path.split('/').last)) continue;
+    try {
+      if (!(await entity.stat()).modified.isBefore(cutoff)) continue;
+      if (entity is File) {
+        await entity.delete();
+      } else if (entity is Directory && entity.path.endsWith('-dir')) {
+        await entity.delete(recursive: true);
+      }
+    } on FileSystemException catch (e) {
+      // Another download may have replaced or removed it meanwhile.
+      AppLogger.info('Could not remove a stale download: ${e.toString()}');
+    }
+  }
 }
 
 /// Removes all matching elements and appends the last match to the end.
@@ -1049,16 +1110,11 @@ class AppsProvider with ChangeNotifier {
         loadingApps = true;
         notify();
         await loadApps();
-        final cutoff = DateTime.now().subtract(const Duration(days: 7));
-        await for (var entity in apkDir.list()) {
-          if (entity is File &&
-              entity.path.endsWith('.part') &&
-              (await entity.stat()).modified.isBefore(cutoff)) {
-            if (!areDownloadsRunning()) {
-              await entity.delete();
-            }
-          }
-        }
+        await sweepStaleDownloads(
+          apkDir,
+          DateTime.now().subtract(staleDownloadAge),
+          isBusy: areDownloadsRunning,
+        );
         _readyCompleter.complete();
       }
     }().catchError((e) {

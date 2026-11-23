@@ -6,6 +6,14 @@ import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/installers/installer.dart';
 import 'package:obtainium/providers/source_provider.dart';
 
+/// Whether a failed `pm install` printed a reason that condemns the APK
+/// itself: one it could not parse or verify, or a downgrade. These are the
+/// failures PackageInstaller reports as STATUS_FAILURE_INVALID.
+bool pmOutputSaysApkIsInvalid(String output) =>
+    output.contains('INSTALL_PARSE_FAILED_') ||
+    output.contains('INSTALL_FAILED_INVALID_APK') ||
+    output.contains('INSTALL_FAILED_VERSION_DOWNGRADE');
+
 /// Installs via the Android `pm` CLI over root (`su`).
 class RootInstaller extends Installer {
   RootInstaller(super.settingsProvider);
@@ -69,7 +77,14 @@ class RootInstaller extends Installer {
       if (result.exitCode != 0) {
         final detail = result.stderr.toString().trim();
         AppLogger.warn('Root pm install failed for $appId: $detail');
-        return InstallResult.error(result.exitCode);
+        // pm exits with 1 whatever went wrong, so the reason has to come from
+        // what it printed.
+        return InstallResult.error(
+          result.exitCode,
+          fileIsInvalid: pmOutputSaysApkIsInvalid(
+            '${result.stdout}\n${result.stderr}',
+          ),
+        );
       }
       return InstallResult.success();
     } on ProcessException catch (e) {
