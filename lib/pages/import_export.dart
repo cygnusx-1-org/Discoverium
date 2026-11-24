@@ -1062,6 +1062,7 @@ class _SelectionModalState extends State<SelectionModal> {
     final selected = entrySelections[entry.key] ?? false;
     return TvFocusRing(
       borderRadius: AppRadii.medium,
+      shape: Theme.of(context).listTileTheme.shape,
       child: ListTile(
         leading: ExcludeFocus(
           child: widget.onlyOneSelectionAllowed

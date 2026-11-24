@@ -302,6 +302,27 @@ class _HomePageState extends State<HomePage> {
           }
         } else if (action == 'app' || action == 'apps') {
           if (!context.mounted) return;
+          final ap = appsProvider;
+          await waitUntil(
+            () => !ap.loadingApps,
+            interval: const Duration(milliseconds: 10),
+            maxAttempts: 500,
+          );
+          dynamic parsedData;
+          try {
+            parsedData = jsonDecode(data);
+          } catch (e) {
+            AppLogger.error(e, message: 'Failed to decode deep-link JSON');
+            throw ObtainiumError(tr('invalidInput'));
+          }
+          final importPayload = jsonEncode(<String, dynamic>{
+            'apps': action == 'app' ? <dynamic>[parsedData] : parsedData,
+          });
+          final conflictCount = ap
+              .appIdsInImportJSON(importPayload)
+              .where((id) => ap.apps.containsKey(id))
+              .length;
+          if (!mounted) return;
           if (await showDialog(
                 context: context,
                 builder: (BuildContext ctx) {
@@ -315,6 +336,19 @@ class _HomePageState extends State<HomePage> {
                     ),
                     items: const [],
                     additionalWidgets: [
+                      if (conflictCount > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Text(
+                            tr(
+                              'importOverwriteWarning',
+                              args: [conflictCount.toString()],
+                            ),
+                            style: TextStyle(
+                              color: Theme.of(ctx).colorScheme.error,
+                            ),
+                          ),
+                        ),
                       ExpansionTile(
                         title: Text(tr('rawJson')),
                         children: [
@@ -330,17 +364,6 @@ class _HomePageState extends State<HomePage> {
               ) !=
               null) {
             if (!context.mounted) return;
-            final ap = appsProvider;
-            dynamic parsedData;
-            try {
-              parsedData = jsonDecode(data);
-            } catch (e) {
-              AppLogger.error(e, message: 'Failed to decode deep-link JSON');
-              throw ObtainiumError(tr('invalidInput'));
-            }
-            final importPayload = jsonEncode(<String, dynamic>{
-              'apps': action == 'app' ? <dynamic>[parsedData] : parsedData,
-            });
             final result = await ap.import(importPayload);
             if (mounted) {
               showMessage(
@@ -352,6 +375,18 @@ class _HomePageState extends State<HomePage> {
               );
             }
           }
+        } else if (action == 'open') {
+          final targetId = uri.queryParameters['id'];
+          final AppsProvider ap = appsProvider;
+          await waitUntil(
+            () => !ap.loadingApps,
+            interval: const Duration(milliseconds: 10),
+            maxAttempts: 500,
+          );
+          if (targetId == null || !ap.apps.containsKey(targetId)) {
+            throw ObtainiumError(tr('appNotFound'));
+          }
+          await goToExistingApp(targetId);
         } else if (action == 'refresh') {
           final targetId = uri.queryParameters['id'];
           await appsProvider.checkUpdates(
@@ -438,6 +473,7 @@ class _HomePageState extends State<HomePage> {
     // tablet/two-pane UI matches mobile.
     final actionsFab = TvFocusRing(
       borderRadius: AppRadii.medium,
+      shape: const StadiumBorder(),
       child: FloatingActionButton.extended(
         heroTag: null,
         onPressed: onActionsPressed,

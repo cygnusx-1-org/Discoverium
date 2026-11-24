@@ -23,7 +23,7 @@ String trackedAfter({
 }
 
 /// Whether the UI would show an update badge for the given app state.
-bool updateShown(String installed, String latest) {
+bool updateShown(String installed, String latest, {bool trackOnly = false}) {
   final app = App(
     id: 'com.example.app',
     url: 'https://github.com/example/app',
@@ -32,12 +32,24 @@ bool updateShown(String installed, String latest) {
     installedVersion: installed,
     latestVersion: latest,
     preferredApkIndex: 0,
-    additionalSettings: const {'versionDetection': true},
+    additionalSettings: {'versionDetection': true, 'trackOnly': trackOnly},
   );
   return isAppUpdateable(app, SettingsProvider());
 }
 
 void main() {
+  group('isAppUpdateable with pseudo-versions (#3523)', () {
+    test('an apparent downgrade is hidden when versions are real', () {
+      expect(updateShown('1.2.4', '1.2.3'), isFalse);
+    });
+
+    // Discoverium retired the version detection toggle (#59), so a track-only
+    // app is the one whose version is a pseudo-version.
+    test('any change is an update for a track-only app', () {
+      expect(updateShown('1.2.4', '1.2.3', trackOnly: true), isTrue);
+    });
+  });
+
   group('reconcileVersionDifferences', () {
     test('equal versions share a format and match', () {
       final result = reconcileVersionDifferences('1.2.3', '1.2.3');

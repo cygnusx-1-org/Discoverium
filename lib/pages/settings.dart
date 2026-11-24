@@ -11,6 +11,7 @@ import 'package:obtainium/components/ui_widgets.dart';
 import 'package:obtainium/components/generated_form_renderer.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/core/logging/app_logger.dart';
+import 'package:obtainium/installers/root_installer.dart';
 import 'package:obtainium/installers/shizuku_installer.dart';
 import 'package:obtainium/main.dart';
 import 'package:obtainium/pages/import_export.dart';
@@ -252,6 +253,27 @@ class _SettingsPageState extends State<SettingsPage> {
             if (!mounted) return;
             showError(e, context);
           });
+    } else if (mode == InstallerMode.root.name) {
+      _installerCheckSeq++;
+      final seq = _installerCheckSeq;
+      RootInstaller(settingsProvider)
+          .checkPermission()
+          .then((rootGranted) {
+            if (_installerCheckSeq != seq) return;
+            settingsProvider.installerMode = rootGranted
+                ? InstallerMode.root.name
+                : InstallerMode.system.name;
+            if (!mounted) return;
+            if (!rootGranted) {
+              showError(ObtainiumError(tr('rootNotGranted')), context);
+            }
+          })
+          .catchError((e) {
+            if (_installerCheckSeq != seq) return;
+            settingsProvider.installerMode = InstallerMode.system.name;
+            if (!mounted) return;
+            showError(e, context);
+          });
     } else {
       settingsProvider.installerMode = mode;
     }
@@ -279,6 +301,9 @@ class _SettingsPageState extends State<SettingsPage> {
       padding: EdgeInsets.zero,
       child: TvFocusRing(
         borderRadius: AppRadii.small,
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(AppRadii.small),
+        ),
         child: ListTile(
           contentPadding: AppPaddings.rowHorizontal,
           leading: Icon(icon, color: cs.primary),
@@ -914,6 +939,12 @@ class _SettingsPageState extends State<SettingsPage> {
         value: settingsProvider.checkOnStart,
         onChanged: (value) => settingsProvider.checkOnStart = value,
       ),
+      if (!settingsProvider.isTV)
+        ToggleTile(
+          label: tr('useRefreshButton'),
+          value: settingsProvider.useRefreshButton,
+          onChanged: (value) => settingsProvider.useRefreshButton = value,
+        ),
       ToggleTile(
         label: tr('checkUpdateOnDetailPage'),
         value: settingsProvider.checkUpdateOnDetailPage,
@@ -931,6 +962,12 @@ class _SettingsPageState extends State<SettingsPage> {
         value: settingsProvider.onlyCheckInstalledOrTrackOnlyApps,
         onChanged: (value) =>
             settingsProvider.onlyCheckInstalledOrTrackOnlyApps = value,
+      ),
+      ToggleTile(
+        label: tr('checkSystemDisabledApps'),
+        value: settingsProvider.checkSystemDisabledApps,
+        onChanged: (value) => settingsProvider.checkSystemDisabledApps = value,
+        helpWidgets: [Text(tr('checkSystemDisabledAppsHelp'))],
       ),
       SectionHeader(
         tr('filteringAndVersions'),
@@ -1044,6 +1081,12 @@ class _SettingsPageState extends State<SettingsPage> {
           style: Theme.of(context).textTheme.bodySmall,
         ),
       ),
+      ToggleTile(
+        label: tr('verifySigningCertHashes'),
+        value: settingsProvider.verifySigningCertHashes,
+        onChanged: (value) => settingsProvider.verifySigningCertHashes = value,
+        helpWidgets: [Text(tr('verifySigningCertHashesHelp'))],
+      ),
       _fieldTile(
         context,
         TvDropdownMenu<String>(
@@ -1062,6 +1105,10 @@ class _SettingsPageState extends State<SettingsPage> {
             DropdownMenuEntry(
               value: InstallerMode.external.name,
               label: tr('installMethodExternal'),
+            ),
+            DropdownMenuEntry(
+              value: InstallerMode.root.name,
+              label: tr('installMethodRoot'),
             ),
           ],
           onSelected: (value) {
@@ -1101,7 +1148,8 @@ class _SettingsPageState extends State<SettingsPage> {
             },
           ),
         ),
-      if (settingsProvider.installerMode == InstallerMode.shizuku.name)
+      if (settingsProvider.installerMode == InstallerMode.shizuku.name ||
+          settingsProvider.installerMode == InstallerMode.root.name)
         ToggleTile(
           label: tr('shizukuPretendToBeGooglePlay'),
           value: settingsProvider.shizukuPretendToBeGooglePlay,
@@ -1173,6 +1221,33 @@ class _SettingsPageState extends State<SettingsPage> {
       SectionHeader(tr('appListSection'), padding: _settingsSectionPadding),
       _fieldTile(context, sortDropdown),
       orderControl,
+      _fieldTile(
+        context,
+        TvDropdownMenu<AppListDensity>(
+          expandedInsets: EdgeInsets.zero,
+          label: Text(tr('appListDensity')),
+          initialSelection: settingsProvider.appListDensity,
+          dropdownMenuEntries: [
+            DropdownMenuEntry(
+              value: AppListDensity.standard,
+              label: tr('appListDensityStandard'),
+            ),
+            DropdownMenuEntry(
+              value: AppListDensity.compact,
+              label: tr('appListDensityCompact'),
+            ),
+            DropdownMenuEntry(
+              value: AppListDensity.dense,
+              label: tr('appListDensityDense'),
+            ),
+          ],
+          onSelected: (value) {
+            if (value != null) {
+              settingsProvider.appListDensity = value;
+            }
+          },
+        ),
+      ),
       SectionHeader(tr('languageAndText'), padding: _settingsSectionPadding),
       _fieldTile(context, const _LocaleDropdown()),
       if (sdk >= 29)
@@ -1536,6 +1611,7 @@ class _ThemeColorPickerTile extends StatelessWidget {
         subtitle: Text(_themeColourLabel(themeColor)),
         trailing: TvFocusRing(
           borderRadius: 20,
+          shape: const CircleBorder(),
           child: ColorIndicator(
             width: 40,
             height: 40,

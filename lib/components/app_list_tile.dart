@@ -219,6 +219,13 @@ class AppTileMetrics {
   double get minVerticalPadding => isDense ? 0 : (isCompact ? 2 : 4);
 
   double get iconSize => isCompact ? 36 : 44;
+
+  /// Vertical padding of a main-list row, whose versions sit on a line of
+  /// their own below the name (see [AppListTile]).
+  double get rowVerticalPadding => isDense ? 4 : (isCompact ? 8 : 12);
+
+  /// Gap between a main-list row's name line and its version line.
+  double get versionLineGap => isDense ? 2 : (isCompact ? 4 : 8);
 }
 
 class AppListTile extends StatelessWidget {
@@ -467,6 +474,7 @@ class AppListTile extends StatelessWidget {
               // widget, and versions are the longest strings here. On its own
               // full-width line a version pair breaks at the arrow instead of
               // mid-token, and it still does so at large system text scales.
+              final metrics = AppTileMetrics(settingsProvider.appListDensity);
               final ShapeBorder? tileShape = borderRadius != null
                   ? RoundedSuperellipseBorder(borderRadius: borderRadius!)
                   : null;
@@ -491,24 +499,32 @@ class AppListTile extends StatelessWidget {
                     onToggleSelected();
                   },
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      metrics.rowVerticalPadding,
+                      16,
+                      metrics.rowVerticalPadding,
+                    ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
-                            // On TV the row is one remote stop; the icon's
-                            // own tap targets would each be another.
-                            ExcludeFocus(
-                              excluding: settingsProvider.isTV,
-                              child: AppIconWidget(
-                                appId: _app.id,
-                                installed: appInMemory.installedInfo != null,
-                                appsProvider: appsProvider,
+                            if (!metrics.isDense) ...[
+                              // On TV the row is one remote stop; the icon's
+                              // own tap targets would each be another.
+                              ExcludeFocus(
+                                excluding: settingsProvider.isTV,
+                                child: AppIconWidget(
+                                  appId: _app.id,
+                                  installed: appInMemory.installedInfo != null,
+                                  appsProvider: appsProvider,
+                                  size: metrics.iconSize,
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 16),
+                              const SizedBox(width: 16),
+                            ],
                             Expanded(
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
@@ -553,7 +569,7 @@ class AppListTile extends StatelessWidget {
                                         ),
                                     ],
                                   ),
-                                  _authorText(),
+                                  if (!metrics.isDense) _authorText(),
                                   if (_app.hasPendingRepoRename)
                                     _repoMovedRow(context),
                                 ],
@@ -563,25 +579,51 @@ class AppListTile extends StatelessWidget {
                             trailingRow,
                           ],
                         ),
-                        const SizedBox(height: 8),
+                        SizedBox(height: metrics.versionLineGap),
                         // Spans the whole card, under the icon as well as the
                         // text, so this is the widest line available to it.
-                        if (downloadProgress != null)
-                          DownloadProgressTrailing(
-                            progress: downloadProgress,
-                            receivedBytes: appInMemory.downloadReceivedBytes,
-                            totalBytes: appInMemory.downloadTotalBytes,
-                          )
-                        else
-                          // Likewise the release-date link.
-                          ExcludeFocus(
-                            excluding: settingsProvider.isTV,
-                            child: _VersionLabel(
-                              appInMemory: appInMemory,
-                              settingsProvider: settingsProvider,
-                              showChangesFn: showChangesFn,
+                        // The versions and a download's progress take turns
+                        // in it, both always laid out, so it is always as
+                        // tall as the taller of the two: starting or ending a
+                        // download never moves the rows below.
+                        Stack(
+                          children: [
+                            Visibility(
+                              visible: downloadProgress == null,
+                              maintainSize: true,
+                              maintainAnimation: true,
+                              maintainState: true,
+                              // On TV, likewise the release-date link.
+                              child: ExcludeFocus(
+                                excluding:
+                                    settingsProvider.isTV ||
+                                    downloadProgress != null,
+                                child: _VersionLabel(
+                                  appInMemory: appInMemory,
+                                  settingsProvider: settingsProvider,
+                                  showChangesFn: showChangesFn,
+                                ),
+                              ),
                             ),
-                          ),
+                            Visibility(
+                              visible: downloadProgress != null,
+                              maintainSize: true,
+                              maintainAnimation: true,
+                              maintainState: true,
+                              child: ExcludeFocus(
+                                excluding: downloadProgress == null,
+                                child: DownloadProgressTrailing(
+                                  progress: downloadProgress ?? 0,
+                                  receivedBytes:
+                                      appInMemory.downloadReceivedBytes,
+                                  totalBytes: appInMemory.downloadTotalBytes,
+                                  onCancel: () =>
+                                      appsProvider.cancelDownload(appId),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
@@ -594,6 +636,7 @@ class AppListTile extends StatelessWidget {
                 return TvFocusRing(
                   borderRadius:
                       borderRadius?.topLeft.x ?? connectedTileBigRadius,
+                  shape: tileShape,
                   child: Row(
                     children: [
                       if (selectionMode)
@@ -717,8 +760,19 @@ class DownloadProgressTrailing extends StatelessWidget {
             ),
           ),
         ),
-        if (!installing && onCancel != null)
-          DownloadCancelButton(onPressed: onCancel!),
+        if (onCancel != null)
+          // Installing can't be cancelled, but the button keeps its space so
+          // the row neither shrinks nor shifts when the download finishes.
+          Visibility(
+            visible: !installing,
+            maintainSize: true,
+            maintainAnimation: true,
+            maintainState: true,
+            child: ExcludeFocus(
+              excluding: installing,
+              child: DownloadCancelButton(onPressed: onCancel!),
+            ),
+          ),
       ],
     );
   }
@@ -772,6 +826,12 @@ class AppListGroupSection extends StatelessWidget {
               expanded: expanded,
               label: title,
               child: TvFocusRing(
+                shape: RoundedSuperellipseBorder(
+                  borderRadius: positionalTileRadius(
+                    isFirst: true,
+                    isLast: segmentCount == 1,
+                  ),
+                ),
                 child: InkWell(
                   onTap: onToggle,
                   child: Padding(
@@ -1060,12 +1120,13 @@ class _VersionLabel extends StatelessWidget {
         ? Theme.of(context).colorScheme.primary
         : Theme.of(context).colorScheme.onSurfaceVariant;
     final highlight = settingsProvider.highlightTouchTargets;
+    final isDense = settingsProvider.appListDensity == AppListDensity.dense;
 
     // Versions are never shortened. A version the reader cannot see in full
     // tells them nothing about what is being compared, so the text wraps onto
     // as many lines as it needs rather than ellipsising — at any text scale.
     final versionText = DefaultTextStyle.merge(
-      style: const TextStyle(fontSize: 14),
+      style: TextStyle(fontSize: isDense ? 11 : 14),
       child: Directionality(
         // The "old → new" transition uses an LTR-only arrow glyph; under an
         // RTL Directionality it gets bidi-mirrored and reordered, making it
@@ -1088,7 +1149,7 @@ class _VersionLabel extends StatelessWidget {
       style: TextStyle(
         fontStyle: FontStyle.italic,
         color: updateColor,
-        fontSize: 13,
+        fontSize: isDense ? 10 : 13,
         decoration: showChangesFn == null
             ? TextDecoration.none
             : TextDecoration.underline,
