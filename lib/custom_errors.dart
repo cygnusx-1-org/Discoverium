@@ -186,8 +186,12 @@ class InstallError extends ObtainiumError {
 /// The downloaded APK's signing certificate does not match the expected hash
 /// (user-provided) or the installed app's certificate.
 class SigningCertMismatchError extends ObtainiumError {
+  /// Whether the mismatch is against the hashes the user configured, which
+  /// can never be overridden, rather than against the installed app.
+  final bool hardBlock;
+
   SigningCertMismatchError({
-    required bool hardBlock,
+    required this.hardBlock,
     required Set<String> expected,
     required Set<String> actual,
   }) : super.withCode(

@@ -365,8 +365,13 @@ class GitHub extends AppSource {
     return reqUrl;
   }
 
-  Future<String> getAPIHost(Map<String, dynamic> additionalSettings) async =>
-      'https://api.${hosts[0]}';
+  Future<String> getAPIHost(Map<String, dynamic> additionalSettings) async {
+    final host = hosts.isNotEmpty ? hosts[0] : 'github.com';
+    if (host == 'github.com' || host == 'www.github.com') {
+      return 'https://api.github.com';
+    }
+    return 'https://$host/api/v3';
+  }
 
   /// Whether [res] is a 401/403 whose JSON body says the configured token is
   /// the problem (e.g. "Resource not accessible by personal access token").
@@ -832,6 +837,7 @@ class GitHub extends AppSource {
     String standardUrl,
     Map<String, dynamic> additionalSettings, {
     Function(Response)? onHttpErrorCode,
+    Future<List<dynamic>> Function(String requestUrl)? releaseListLoader,
   }) async {
     final SettingsProvider settingsProvider = SettingsProvider();
     await settingsProvider.initializeSettings();
@@ -895,113 +901,118 @@ class GitHub extends AppSource {
       }
       latestRelease = jsonDecode(res.body);
     }
-    final Response res = await _sourceRequestWithAuthFallback(
-      requestUrl,
-      additionalSettings,
-    );
-    if (res.statusCode == 200) {
-      final decoded = jsonDecode(res.body);
-      if (decoded is! List) {
+    final Response? res = releaseListLoader == null
+        ? await _sourceRequestWithAuthFallback(requestUrl, additionalSettings)
+        : null;
+    final List<dynamic> decoded;
+    if (releaseListLoader != null) {
+      decoded = await releaseListLoader(requestUrl);
+    } else if (res!.statusCode == 200) {
+      final body = jsonDecode(res.body);
+      if (body is! List) {
         throw NoReleasesError();
       }
-      var releases = decoded;
-      if (latestRelease != null) {
-        final latestTag = latestRelease['tag_name'] ?? latestRelease['name'];
-        if (releases
-            .where(
-              (element) =>
-                  (element['tag_name'] ?? element['name']) == latestTag,
-            )
-            .isEmpty) {
-          releases = [latestRelease, ...releases];
-        }
-      }
-
-      if (sortMethod == 'none') {
-        releases = releases.reversed.toList();
-      } else {
-        _sortGitHubReleases(
-          releases,
-          sortMethod,
-          useLatestAssetDateAsReleaseDate,
-        );
-      }
-      _positionLatestRelease(releases, latestRelease);
-      releases = releases.reversed.toList();
-      dynamic targetRelease;
-      // Prefer an eligible release; if none is old enough, fall back to the
-      // newest so the caller can suppress it until it ages.
-      for (final int age in minAgeDays > 0 ? [minAgeDays, 0] : [0]) {
-        targetRelease = _selectGitHubTargetRelease(
-          releases: releases,
-          fallbackToOlderReleases: fallbackToOlderReleases,
-          includePrereleases: includePrereleases,
-          regexFilter: regexFilter,
-          regexNotesFilter: regexNotesFilter,
-          includeZips: includeZips,
-          includeTarballs: includeTarballs,
-          useLatestAssetDateAsReleaseDate: useLatestAssetDateAsReleaseDate,
-          minAgeDays: age,
-          additionalSettings: additionalSettings,
-          sourceConfigSettingValues: sourceConfigSettingValues,
-        );
-        if (targetRelease != null) break;
-      }
-      if (targetRelease == null) {
-        throw NoReleasesError();
-      }
-      final String? version = targetRelease['version'];
-      final DateTime? releaseDate = _getReleaseDateFromRelease(
-        targetRelease,
-        useLatestAssetDateAsReleaseDate,
-      );
-      if (version == null || version.isEmpty) {
-        throw NoVersionError();
-      }
-      final changeLog = (targetRelease['body'] ?? '').toString();
-      // Prefer Discoverium's curated name/author/icon over the raw repo path.
-      final repoEntry = await DiscoveriumRepo.findByUrl(standardUrl);
-      if (repoEntry?.icon != null) {
-        additionalSettings['discoveriumIconUrl'] = repoEntry!.icon;
-      }
-      return APKDetails(
-        version,
-        targetRelease['apkUrls'] as List<MapEntry<String, String>>,
-        _appNamesWithRepoMetadata(standardUrl, repoEntry),
-        releaseDate: releaseDate,
-        changeLog: changeLog.isEmpty ? null : changeLog,
-        allAssetUrls:
-            targetRelease['allAssetUrls'] as List<MapEntry<String, String>>,
-        recentReleases: _recentReleaseNotes(
-          releases,
-          includePrereleases,
-          additionalSettings['includeDrafts'] == true,
-          additionalSettings['releaseTitleAsVersion'] == true,
-        ),
-        isArchived: isArchived,
-        newerReleasesFilteredOut:
-            targetRelease['newerReleasesFilteredOut'] as int?,
-      );
+      decoded = body;
     } else {
       if (onHttpErrorCode != null) {
         onHttpErrorCode(res);
       }
       throw getObtainiumHttpError(res);
     }
+    var releases = decoded;
+    if (latestRelease != null) {
+      final latestTag = latestRelease['tag_name'] ?? latestRelease['name'];
+      if (releases
+          .where(
+            (element) => (element['tag_name'] ?? element['name']) == latestTag,
+          )
+          .isEmpty) {
+        releases = [latestRelease, ...releases];
+      }
+    }
+
+    if (sortMethod == 'none') {
+      releases = releases.reversed.toList();
+    } else {
+      _sortGitHubReleases(
+        releases,
+        sortMethod,
+        useLatestAssetDateAsReleaseDate,
+      );
+    }
+    _positionLatestRelease(releases, latestRelease);
+    releases = releases.reversed.toList();
+    dynamic targetRelease;
+    // Prefer an eligible release; if none is old enough, fall back to the
+    // newest so the caller can suppress it until it ages.
+    for (final int age in minAgeDays > 0 ? [minAgeDays, 0] : [0]) {
+      targetRelease = _selectGitHubTargetRelease(
+        releases: releases,
+        fallbackToOlderReleases: fallbackToOlderReleases,
+        includePrereleases: includePrereleases,
+        regexFilter: regexFilter,
+        regexNotesFilter: regexNotesFilter,
+        includeZips: includeZips,
+        includeTarballs: includeTarballs,
+        useLatestAssetDateAsReleaseDate: useLatestAssetDateAsReleaseDate,
+        minAgeDays: age,
+        additionalSettings: additionalSettings,
+        sourceConfigSettingValues: sourceConfigSettingValues,
+      );
+      if (targetRelease != null) break;
+    }
+    if (targetRelease == null) {
+      throw NoReleasesError();
+    }
+    final String? version = targetRelease['version'];
+    final DateTime? releaseDate = _getReleaseDateFromRelease(
+      targetRelease,
+      useLatestAssetDateAsReleaseDate,
+    );
+    if (version == null || version.isEmpty) {
+      throw NoVersionError();
+    }
+    final changeLog = (targetRelease['body'] ?? '').toString();
+    // Prefer Discoverium's curated name/author/icon over the raw repo path.
+    final repoEntry = await DiscoveriumRepo.findByUrl(standardUrl);
+    if (repoEntry?.icon != null) {
+      additionalSettings['discoveriumIconUrl'] = repoEntry!.icon;
+    }
+    return APKDetails(
+      version,
+      targetRelease['apkUrls'] as List<MapEntry<String, String>>,
+      _appNamesWithRepoMetadata(standardUrl, repoEntry),
+      releaseDate: releaseDate,
+      changeLog: changeLog.isEmpty ? null : changeLog,
+      releaseUrl: targetRelease['html_url'] as String?,
+      allAssetUrls:
+          targetRelease['allAssetUrls'] as List<MapEntry<String, String>>,
+      recentReleases: _recentReleaseNotes(
+        releases,
+        includePrereleases,
+        additionalSettings['includeDrafts'] == true,
+        additionalSettings['releaseTitleAsVersion'] == true,
+      ),
+      isArchived: isArchived,
+      newerReleasesFilteredOut:
+          targetRelease['newerReleasesFilteredOut'] as int?,
+    );
   }
 
   Future<APKDetails> fetchReleaseDetailsWithTagFallback(
     String standardUrl,
     Map<String, dynamic> additionalSettings,
     Future<String> Function(bool) reqUrlGenerator,
-    dynamic Function(Response)? onHttpErrorCode,
-  ) async {
+    dynamic Function(Response)? onHttpErrorCode, {
+    Future<List<dynamic>> Function(String requestUrl)? releaseListLoader,
+  }) async {
     try {
       return await _fetchReleaseDetails(
         await reqUrlGenerator(false),
         standardUrl,
         additionalSettings,
         onHttpErrorCode: onHttpErrorCode,
+        releaseListLoader: releaseListLoader,
       );
     } catch (err) {
       if (err is NoReleasesError && additionalSettings['trackOnly'] == true) {
@@ -1010,6 +1021,7 @@ class GitHub extends AppSource {
           standardUrl,
           additionalSettings,
           onHttpErrorCode: onHttpErrorCode,
+          releaseListLoader: releaseListLoader,
         );
       } else {
         rethrowOrWrapError(err);

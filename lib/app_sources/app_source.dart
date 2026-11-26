@@ -121,6 +121,7 @@ abstract class AppSource {
     Map<String, dynamic> additionalSettings, {
     bool followRedirects = true,
     Object? postBody,
+    Map<String, String>? headers,
   }) async {
     final sp = SettingsProvider();
     await sp.initializeSettings();
@@ -138,10 +139,10 @@ abstract class AppSource {
     additionalSettingsPlusSourceConfig['allowInsecureRedirects'] =
         allowInsecureRedirects;
     final method = postBody == null ? 'GET' : 'POST';
-    final requestHeaders = await getRequestHeaders(
-      additionalSettingsPlusSourceConfig,
-      url,
-    );
+    final requestHeaders = <String, String>{
+      ...?await getRequestHeaders(additionalSettingsPlusSourceConfig, url),
+      ...?headers,
+    };
     Future<http.Response> perform() async {
       return await HttpService().request(
         method,
@@ -372,6 +373,20 @@ abstract class AppSource {
     [GeneratedFormTextField('appName', label: tr('appName'), required: false)],
     [GeneratedFormTextField('appAuthor', label: tr('author'), required: false)],
     [
+      GeneratedFormDropdown(
+        'installerMode',
+        [
+          const MapEntry('', 'useGlobalDefault'),
+          MapEntry(InstallerMode.system.name, 'installMethodSystem'),
+          MapEntry(InstallerMode.shizuku.name, 'installMethodShizuku'),
+          MapEntry(InstallerMode.external.name, 'installMethodExternal'),
+          MapEntry(InstallerMode.root.name, 'installMethodRoot'),
+        ],
+        label: tr('installMethod'),
+        required: false,
+      ),
+    ],
+    [
       GeneratedFormSwitch(
         'shizukuPretendToBeGooglePlay',
         label: tr('shizukuPretendToBeGooglePlay'),
@@ -555,7 +570,8 @@ abstract class AppSource {
     final Map<String, String> results = {};
     for (var e in sourceConfigSettingFormItems) {
       var val = hostChanged && !hostIdenticalDespiteAnyChange
-          ? additionalSettings[e.key]
+          ? (additionalSettings[e.key] ??
+                (e is GeneratedFormSwitch ? false : ''))
           : (additionalSettings[e.key] is String &&
                 (additionalSettings[e.key] as String).isNotEmpty)
           ? additionalSettings[e.key]

@@ -461,30 +461,38 @@ class DownloadCancelButton extends StatelessWidget {
 /// controls in line with [focused] (overlapping it horizontally), then the one
 /// whose left edge is closest. Unlike Flutter's own traversal it never picks
 /// one from a neighbouring pane.
+///
+/// With [within], a control is judged by the part of it inside that rect
+/// alone, and one wholly outside it is passed over: a card the screen's edge
+/// cuts off is as near as the part of it that shows.
 FocusNode? tvNextInPane(
   FocusNode pane,
   FocusNode focused, {
   required bool down,
   bool Function(FocusNode node)? where,
+  Rect? within,
 }) {
   // Controls whose near edges are this close count as one row.
   const rowSlack = 16.0;
   final from = focused.rect;
   double gapTo(Rect r) => down ? r.top - from.bottom : from.top - r.bottom;
-  final ahead = <FocusNode>[];
+  final ahead = <(FocusNode, Rect)>[];
   var nearestGap = double.infinity;
   for (final node in pane.traversalDescendants) {
     if (node == focused || (where != null && !where(node))) continue;
-    final r = node.rect;
+    var r = node.rect;
+    if (within != null) {
+      if (!r.overlaps(within)) continue;
+      r = r.intersect(within);
+    }
     if (down ? r.top < from.bottom - 1 : r.bottom > from.top + 1) continue;
-    ahead.add(node);
+    ahead.add((node, r));
     if (gapTo(r) < nearestGap) nearestGap = gapTo(r);
   }
   FocusNode? best;
   var bestInLine = false;
   var bestSideways = double.infinity;
-  for (final node in ahead) {
-    final r = node.rect;
+  for (final (node, r) in ahead) {
     if (gapTo(r) > nearestGap + rowSlack) continue;
     final inLine = r.left < from.right && r.right > from.left;
     final sideways = (r.left - from.left).abs();
@@ -546,6 +554,7 @@ KeyEventResult tvPaneUpDown(FocusNode pane, KeyEvent event) {
 class TvFocusRing extends StatefulWidget {
   final Widget child;
   final double borderRadius;
+  final ShapeBorder? shape;
   final double width;
   final Color? color;
 
@@ -553,6 +562,7 @@ class TvFocusRing extends StatefulWidget {
     super.key,
     required this.child,
     this.borderRadius = connectedTileBigRadius,
+    this.shape,
     this.width = 3,
     this.color,
   });
@@ -569,6 +579,16 @@ class _TvFocusRingState extends State<TvFocusRing> {
     final isTV = context.select<SettingsProvider, bool>((p) => p.isTV);
     if (!isTV) return widget.child;
     final color = widget.color ?? Theme.of(context).colorScheme.primary;
+    final baseShape =
+        widget.shape ??
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(widget.borderRadius),
+        );
+    final ringShape = _focused && baseShape is OutlinedBorder
+        ? baseShape.copyWith(
+            side: BorderSide(color: color, width: widget.width),
+          )
+        : baseShape;
     return Focus(
       canRequestFocus: false,
       skipTraversal: true,
@@ -578,12 +598,7 @@ class _TvFocusRingState extends State<TvFocusRing> {
       },
       child: DecoratedBox(
         position: DecorationPosition.foreground,
-        decoration: BoxDecoration(
-          border: _focused
-              ? Border.all(color: color, width: widget.width)
-              : null,
-          borderRadius: BorderRadius.circular(widget.borderRadius),
-        ),
+        decoration: ShapeDecoration(shape: ringShape),
         child: widget.child,
       ),
     );
@@ -763,17 +778,19 @@ class ActionListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tileShape = borderRadius != null
+        ? RoundedRectangleBorder(borderRadius: borderRadius!)
+        : Theme.of(context).listTileTheme.shape;
     return TvFocusRing(
       borderRadius: borderRadius?.topLeft.x ?? connectedTileBigRadius,
+      shape: tileShape,
       child: ListTile(
         leading: Icon(icon),
         title: Text(label),
         subtitle: subtitle == null ? null : Text(subtitle!),
         trailing: trailing,
         enabled: onTap != null,
-        shape: borderRadius != null
-            ? RoundedRectangleBorder(borderRadius: borderRadius!)
-            : null,
+        shape: tileShape,
         onTap: onTap == null
             ? null
             : () {
@@ -1036,11 +1053,14 @@ class ToggleTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tileShape = Theme.of(context).listTileTheme.shape;
     return TvFocusRing(
+      shape: tileShape,
       child: ListTile(
         contentPadding: noPadding ? EdgeInsets.zero : AppPaddings.rowHorizontal,
         title: Text(label),
         subtitle: subtitle,
+        shape: tileShape,
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1351,6 +1371,7 @@ class _TvColourSwatch extends StatelessWidget {
       selected: selected,
       child: TvFocusRing(
         borderRadius: 24,
+        shape: const CircleBorder(),
         child: InkWell(
           autofocus: autofocus,
           onTap: onTap,

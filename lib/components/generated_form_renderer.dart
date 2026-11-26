@@ -62,6 +62,11 @@ class TvTextFieldFocus extends StatefulWidget {
   final Widget child;
   final FocusNode textFocusNode;
   final double borderRadius;
+
+  /// The outline the field is actually drawn in, when that isn't a rounded
+  /// rectangle of [borderRadius] (e.g. a tile's superellipse). The ring and
+  /// the clip then follow it instead.
+  final OutlinedBorder? shape;
   final bool autofocus;
 
   const TvTextFieldFocus({
@@ -69,6 +74,7 @@ class TvTextFieldFocus extends StatefulWidget {
     required this.child,
     required this.textFocusNode,
     this.borderRadius = 4,
+    this.shape,
     this.autofocus = false,
   });
 
@@ -141,18 +147,54 @@ class _TvTextFieldFocusState extends State<TvTextFieldFocus> {
         },
         child: ListenableBuilder(
           listenable: _outerFocus,
-          builder: (context, child) => Container(
-            decoration: _outerFocus.hasFocus && !_activated
-                ? BoxDecoration(
-                    border: Border.all(
-                      color: Theme.of(context).colorScheme.primary,
-                      width: 2,
-                    ),
-                    borderRadius: BorderRadius.circular(widget.borderRadius),
-                  )
-                : null,
-            child: ExcludeFocus(excluding: !_activated, child: widget.child),
-          ),
+          // A foreground ring, as in TvFocusRing: a Container's border also
+          // pads its child, so the focused field would shift and grow.
+          builder: (context, child) {
+            final shape = widget.shape;
+            if (shape != null) {
+              return DecoratedBox(
+                position: DecorationPosition.foreground,
+                decoration: ShapeDecoration(
+                  shape: shape.copyWith(
+                    side: _outerFocus.hasFocus && !_activated
+                        ? BorderSide(
+                            color: Theme.of(context).colorScheme.primary,
+                            width: 2,
+                          )
+                        : BorderSide.none,
+                  ),
+                ),
+                child: ClipPath(
+                  clipper: ShapeBorderClipper(shape: shape),
+                  child: ExcludeFocus(
+                    excluding: !_activated,
+                    child: widget.child,
+                  ),
+                ),
+              );
+            }
+            return DecoratedBox(
+              position: DecorationPosition.foreground,
+              decoration: BoxDecoration(
+                border: _outerFocus.hasFocus && !_activated
+                    ? Border.all(
+                        color: Theme.of(context).colorScheme.primary,
+                        width: 2,
+                      )
+                    : null,
+                borderRadius: BorderRadius.circular(widget.borderRadius),
+              ),
+              // Clip the field to the ring's radius so its fill and the ring
+              // share one outline.
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(widget.borderRadius),
+                child: ExcludeFocus(
+                  excluding: !_activated,
+                  child: widget.child,
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -164,6 +206,24 @@ class _GeneratedFormState extends State<GeneratedForm> {
   final Map<String, TextEditingController> _textControllers = {};
   final Map<String, GlobalKey<FormFieldState>> _fieldKeys = {};
   final Map<String, int> _subFormGenerations = {};
+
+  /// Password fields unmasked with their eye button. Cleared as soon as the
+  /// app goes inactive, so a revealed token is masked again by the time the
+  /// user comes back.
+  final Set<String> _revealedKeys = {};
+  AppLifecycleListener? _lifecycleListener;
+
+  void _toggleRevealed(String key) {
+    _lifecycleListener ??= AppLifecycleListener(onInactive: _hideRevealed);
+    setState(() {
+      if (!_revealedKeys.remove(key)) _revealedKeys.add(key);
+    });
+  }
+
+  void _hideRevealed() {
+    if (_revealedKeys.isEmpty) return;
+    setState(() => _revealedKeys.clear());
+  }
 
   InputDecoration _fieldDecoration({
     required String labelText,
@@ -193,6 +253,20 @@ class _GeneratedFormState extends State<GeneratedForm> {
     return null;
   }
 
+  Widget? _buildTextSuffixIcon(GeneratedFormTextField formItem) {
+    final trailing =
+        formItem.suffixIcon ?? _buildHelpSuffixIcon(formItem.helpUrl);
+    if (!formItem.password) return trailing;
+    final revealed = _revealedKeys.contains(formItem.key);
+    final toggle = IconButton(
+      icon: Icon(revealed ? Icons.visibility_off : Icons.visibility),
+      tooltip: tr(revealed ? 'hideToken' : 'showToken'),
+      onPressed: () => _toggleRevealed(formItem.key),
+    );
+    if (trailing == null) return toggle;
+    return Row(mainAxisSize: MainAxisSize.min, children: [toggle, trailing]);
+  }
+
   void notifyFormChange({bool forceInvalid = false, bool isBuilding = false}) {
     final Map<String, dynamic> returnValues = values;
     var valid = true;
@@ -218,7 +292,10 @@ class _GeneratedFormState extends State<GeneratedForm> {
     return null;
   }
 
-  Widget _buildTextField(GeneratedFormTextField formItem) {
+  Widget _buildTextField(
+    GeneratedFormTextField formItem, {
+    OutlinedBorder? tvShape,
+  }) {
     final fieldKey = formItem.key;
     final formFieldKey = _fieldKeys.putIfAbsent(
       fieldKey,
@@ -234,7 +311,8 @@ class _GeneratedFormState extends State<GeneratedForm> {
         final textField = TextFormField(
           controller: ctrl,
           focusNode: focusNode,
-          obscureText: formItem.password,
+          obscureText:
+              formItem.password && !_revealedKeys.contains(formItem.key),
           autocorrect: !formItem.password,
           enableSuggestions: !formItem.password,
           key: formFieldKey,
@@ -248,8 +326,7 @@ class _GeneratedFormState extends State<GeneratedForm> {
           decoration: _fieldDecoration(
             labelText: tr(formItem.label) + (formItem.required ? ' *' : ''),
             hintText: formItem.hint,
-            suffixIcon:
-                formItem.suffixIcon ?? _buildHelpSuffixIcon(formItem.helpUrl),
+            suffixIcon: _buildTextSuffixIcon(formItem),
           ),
           minLines: formItem.max <= 1 ? null : formItem.max,
           maxLines: formItem.max <= 1 ? 1 : formItem.max,
@@ -269,6 +346,7 @@ class _GeneratedFormState extends State<GeneratedForm> {
         if (context.read<SettingsProvider>().isTV) {
           return TvTextFieldFocus(
             textFocusNode: focusNode,
+            shape: tvShape,
             autofocus:
                 widget.autofocusFirstTextField &&
                 formItem.key == _firstTextFieldKey,
@@ -377,6 +455,7 @@ class _GeneratedFormState extends State<GeneratedForm> {
     _textControllers.clear();
     _fieldKeys.clear();
     _subFormGenerations.clear();
+    _revealedKeys.clear();
     values = {
       for (final row in widget.items)
         for (final item in row)
@@ -469,6 +548,7 @@ class _GeneratedFormState extends State<GeneratedForm> {
       c.dispose();
     }
     _fieldKeys.clear();
+    _lifecycleListener?.dispose();
     super.dispose();
   }
 
@@ -627,13 +707,30 @@ class _GeneratedFormState extends State<GeneratedForm> {
         : KeyedSubtree(key: GlobalObjectKey(item.id!), child: header);
   }
 
+  /// Where tile-mode row [r]'s card sits in its run of joined tiles, which
+  /// sets its corner radii.
+  ({bool isFirst, bool isLast}) _tilePosition(int r) {
+    bool isHeaderRow(int i) =>
+        widget.items[i].isNotEmpty && widget.items[i][0] is GeneratedFormHeader;
+    return (
+      isFirst: !widget.joinedTiles || r == 0 || isHeaderRow(r - 1),
+      isLast:
+          !widget.joinedTiles ||
+          r == widget.items.length - 1 ||
+          isHeaderRow(r + 1),
+    );
+  }
+
   Widget _buildItem(
     GeneratedFormItem item, {
     required bool isFirst,
     required bool isLast,
+    OutlinedBorder? tvFieldShape,
   }) {
     if (item is GeneratedFormHeader) return _buildHeader(item);
-    if (item is GeneratedFormTextField) return _buildTextField(item);
+    if (item is GeneratedFormTextField) {
+      return _buildTextField(item, tvShape: tvFieldShape);
+    }
     if (item is GeneratedFormDropdown) return _buildDropdown(item);
     if (item is GeneratedFormSlider) return _buildSlider(item);
     if (item is GeneratedFormSwitch) {
@@ -670,6 +767,18 @@ class _GeneratedFormState extends State<GeneratedForm> {
     final List<Widget> inputRowWidgets = [];
     for (var r = 0; r < widget.items.length; r++) {
       final List<Widget> rowItems = [];
+      // A tile holding a single field is that field's outline, so its TV
+      // focus ring follows the tile's corners rather than cutting across them.
+      OutlinedBorder? tvFieldShape;
+      if (widget.tileMode && widget.items[r].length == 1) {
+        final position = _tilePosition(r);
+        tvFieldShape = RoundedSuperellipseBorder(
+          borderRadius: positionalTileRadius(
+            isFirst: position.isFirst,
+            isLast: position.isLast,
+          ),
+        );
+      }
       for (var e = 0; e < widget.items[r].length; e++) {
         if (e > 0) {
           rowItems.add(const SizedBox(width: 20));
@@ -680,6 +789,7 @@ class _GeneratedFormState extends State<GeneratedForm> {
               widget.items[r][e],
               isFirst: r == 0,
               isLast: r == widget.items.length - 1,
+              tvFieldShape: tvFieldShape,
             ),
           ),
         );
@@ -712,12 +822,11 @@ class _GeneratedFormState extends State<GeneratedForm> {
         if (isSubFormRow(r) || isHeaderRow(r)) {
           rawTiles.add(inputRowWidgets[r]);
         } else {
+          final position = _tilePosition(r);
           rawTiles.add(
             ConnectedCard(
-              isFirst: widget.joinedTiles ? r == 0 || isHeaderRow(r - 1) : true,
-              isLast: widget.joinedTiles
-                  ? r == n - 1 || isHeaderRow(r + 1)
-                  : true,
+              isFirst: position.isFirst,
+              isLast: position.isLast,
               color: isFieldRow(r)
                   ? colorScheme.surfaceContainerHighest
                   : colorScheme.surfaceContainerLow,

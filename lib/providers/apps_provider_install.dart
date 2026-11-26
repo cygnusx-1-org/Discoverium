@@ -71,6 +71,27 @@ bool _isSafeArchiveEntryName(String name) {
   return !segments.contains('..');
 }
 
+// The name the base APK of a split set goes by in its bundle dir, where the
+// install looks for it to put it first.
+const String _splitBaseName = 'base.apk';
+
+/// Removes [files] from the download cache. A download is only discarded once
+/// it is spent (installed) or shown to be unusable; one that merely failed to
+/// install, or whose install was cancelled, is kept so the retry does not have
+/// to fetch it again (#69). A file that cannot be deleted is logged rather
+/// than allowed to mask the install's own outcome.
+void _discardDownload(Iterable<File> files, String appId) {
+  for (final file in files) {
+    try {
+      if (file.existsSync()) file.deleteSync();
+    } catch (e) {
+      AppLogger.info(
+        'Failed to delete the download ${file.path.split('/').last} for $appId: ${e.toString()}',
+      );
+    }
+  }
+}
+
 // How long a download retry waits for the user to bring the app back before
 // giving up and reporting the error (#2894). Matches the wait used when an
 // install needs the user to return.
@@ -92,6 +113,15 @@ bool shouldPollForInstallConfirmation(
   return installerModeKey != 'external';
 }
 
+/// The installer mode for [app]: its own `installerMode` setting when it sets
+/// a known one, otherwise [globalMode].
+String installerModeFor(App? app, String globalMode) {
+  final own = app?.settings.getStringOrNull('installerMode');
+  return own != null && InstallerMode.values.any((m) => m.name == own)
+      ? own
+      : globalMode;
+}
+
 class _InstallResult {
   final String id;
   final bool willBeSilent;
@@ -107,9 +137,10 @@ class _InstallResult {
 
 /// App download, install, and on-device package operations for [AppsProvider].
 extension AppsProviderInstall on AppsProvider {
-  /// Returns the [Installer] strategy for the current installer mode setting.
-  Installer getInstaller() {
-    switch (settingsProvider.installerMode) {
+  /// Returns the [Installer] strategy for [app]'s install method, or for the
+  /// global installer mode setting when the app doesn't set one.
+  Installer getInstaller([App? app]) {
+    switch (installerModeFor(app, settingsProvider.installerMode)) {
       case 'shizuku':
         return ShizukuInstaller(settingsProvider);
       case 'external':
@@ -316,6 +347,9 @@ extension AppsProviderInstall on AppsProvider {
           originalAssetName.endsWith('.tar.bz2') ||
           originalAssetName.endsWith('.tar.xz');
       Directory? apkDir;
+      // The split downloads of a base APK plus split URLs. They stay in the
+      // download cache, like the base, until the app is installed.
+      final List<File> splitFiles = [];
       if (isAPK && !multipleApks) {
         newInfo = await packageManager.getPackageArchiveInfo(
           archiveFilePath: downloadedFile.path,
@@ -334,11 +368,16 @@ extension AppsProviderInstall on AppsProvider {
             sourceFile: downloadedFile,
           );
         } else if (isAPK) {
-          // A base APK plus split URLs: move the base into the bundle dir so
-          // everything is installed together.
-          downloadedFile = downloadedFile.renameSync(
-            '$apkDirPath/${downloadedFile.path.split('/').last}',
-          );
+          // A base APK plus split URLs: gather them in the bundle dir so
+          // everything is installed together. They are copied rather than
+          // moved, so the downloads survive an install that does not go
+          // through (#69). Starting from an empty dir keeps out whatever an
+          // interrupted attempt left there. An APK can run to hundreds of
+          // megabytes, so none of this may block the UI while it is copied.
+          final bundleDir = Directory(apkDirPath);
+          if (bundleDir.existsSync()) await bundleDir.delete(recursive: true);
+          await bundleDir.create(recursive: true);
+          await downloadedFile.copy('$apkDirPath/$_splitBaseName');
         } else {
           await _extractArchive(
             app,
@@ -370,9 +409,7 @@ extension AppsProviderInstall on AppsProvider {
               holdRetry: () => _holdRetryUntilForeground(cancellationToken),
             );
             if (splitFile.path.toLowerCase().endsWith('.apk')) {
-              splitFile.renameSync(
-                '$apkDirPath/${splitFile.path.split('/').last}',
-              );
+              await splitFile.copy('$apkDirPath/split-$i.apk');
             } else {
               await _extractArchive(
                 app,
@@ -380,8 +417,8 @@ extension AppsProviderInstall on AppsProvider {
                 destinationPath: apkDirPath,
                 sourceFile: splitFile,
               );
-              unawaited(splitFile.delete());
             }
+            splitFiles.add(splitFile);
           }
           completedDownloads = downloadUrls.length;
         }
@@ -441,6 +478,7 @@ extension AppsProviderInstall on AppsProvider {
       }
       if (newInfo == null) {
         unawaited(downloadedFile.delete());
+        _discardDownload(splitFiles, app.id);
         if (apkDir != null && apkDir.existsSync()) {
           apkDir.deleteSync(recursive: true);
         }
@@ -454,13 +492,32 @@ extension AppsProviderInstall on AppsProvider {
       );
       downloadedFile = renamedFile;
       final String resolvedAppId = resolvedApp.id;
+      if (resolvedAppId != app.id) {
+        // The base was just renamed after the real package; the splits follow,
+        // or the next download would not find them under that name. Giving up
+        // the old id removes its files from the cache when the app was tracked
+        // under it, so a split may already be gone.
+        for (var i = 0; i < splitFiles.length; i++) {
+          final name = splitFiles[i].path.split('/').last;
+          if (!name.startsWith('${app.id}-') || !splitFiles[i].existsSync()) {
+            continue;
+          }
+          splitFiles[i] = splitFiles[i].renameSync(
+            '${splitFiles[i].parent.path}/$resolvedAppId${name.substring(app.id.length)}',
+          );
+        }
+      }
       // Delete older versions of the file if any (keyed to the resolved id,
       // since the id may have changed from a placeholder to the real package).
+      final currentPaths = {
+        downloadedFile.path,
+        for (final split in splitFiles) split.path,
+      };
       for (var file in downloadedFile.parent.listSync()) {
         final fn = file.path.split('/').last;
         if (fn.startsWith('$resolvedAppId-') &&
             FileSystemEntity.isFileSync(file.path) &&
-            file.path != downloadedFile.path) {
+            !currentPaths.contains(file.path)) {
           unawaited(file.delete(recursive: true));
         }
       }
@@ -477,7 +534,13 @@ extension AppsProviderInstall on AppsProvider {
         } else {
           dirType = DownloadedDirType.zip;
         }
-        return DownloadedDir(resolvedAppId, downloadedFile, apkDir!, dirType);
+        return DownloadedDir(
+          resolvedAppId,
+          downloadedFile,
+          apkDir!,
+          dirType,
+          splits: splitFiles,
+        );
       }
     } finally {
       clearDownloadCancellation(app.id);
@@ -512,7 +575,7 @@ extension AppsProviderInstall on AppsProvider {
     }
     // Installer-specific eligibility (target SDK, installer of record, OS
     // version, Shizuku, etc.) is delegated to the active installer strategy.
-    return getInstaller().canInstallSilently(app);
+    return getInstaller(app).canInstallSilently(app);
   }
 
   /// Whether [app] should be installed silently in the background: the
@@ -723,7 +786,7 @@ extension AppsProviderInstall on AppsProvider {
   }) async {
     // Try installing all APKs; succeed if at least one installed.
     var somethingInstalled = false;
-    final installer = getInstaller();
+    final installer = getInstaller(apps[dir.appId]?.app);
     try {
       final MultiAppMultiError errors = MultiAppMultiError();
       List<File> apkFiles = [];
@@ -753,6 +816,9 @@ extension AppsProviderInstall on AppsProvider {
             installOptions: installOptions,
           );
           if (result.isError) {
+            if (result.fileIsInvalid) {
+              _discardDownload(dir.cachedFiles, dir.appId);
+            }
             throw InstallError(result.errorCode ?? -1);
           }
           if (result.isSuccess) {
@@ -761,8 +827,8 @@ extension AppsProviderInstall on AppsProvider {
             // app may have been removed while the installer ran.
             final entry = apps[dir.appId];
             if (entry != null) await saveApps([entry.app]);
+            _discardDownload(dir.cachedFiles, dir.appId);
           }
-          unawaited(dir.file.delete());
         } catch (e) {
           AppLogger.info(
             'Could not install container from ${dir.type}: ${e.toString()}',
@@ -795,9 +861,9 @@ extension AppsProviderInstall on AppsProvider {
               .sublist(1)
               .map((a) => DownloadedApk(dir.appId, a))
               .toList(),
+          download: dir.cachedFiles,
         );
         somethingInstalled = somethingInstalled || wasInstalled;
-        unawaited(dir.file.delete());
       } catch (e) {
         AppLogger.info(
           'Could not install APKs for ${dir.appId} from ${dir.type}: ${e.toString()}',
@@ -814,13 +880,19 @@ extension AppsProviderInstall on AppsProvider {
   }
 
   /// Installs a downloaded APK file, with optional auxiliary split APKs and Shizuku support.
+  ///
+  /// [download] is what the APK(s) came from in the download cache when that
+  /// is not [file] itself: a bundle's archive, or the base and splits of a
+  /// split set. It is discarded exactly when [file] alone would be.
   Future<bool> installApk(
     DownloadedApk file,
     BuildContext? firstTimeWithContext, {
     bool needsBGWorkaround = false,
     Map<String, dynamic> installOptions = const {},
     List<DownloadedApk> additionalAPKs = const [],
+    List<File>? download,
   }) async {
+    final downloadFiles = download ?? [file.file];
     if (firstTimeWithContext != null) {
       await _shareWithVerifiedApps(file, firstTimeWithContext);
     }
@@ -828,21 +900,16 @@ extension AppsProviderInstall on AppsProvider {
       archiveFilePath: file.file.path,
     );
     if (newInfo == null) {
-      try {
-        deleteFile(file.file);
-        for (var a in additionalAPKs) {
-          deleteFile(a.file);
-        }
-      } catch (e) {
-        AppLogger.info(
-          'Failed to delete bad download files for ${file.appId}: ${e.toString()}',
-        );
-      }
+      _discardDownload([
+        file.file,
+        for (final a in additionalAPKs) a.file,
+        ...downloadFiles,
+      ], file.appId);
       throw ObtainiumError(tr('badDownload'))..url = apps[file.appId]?.app.url;
     }
-    final PackageInfo? appInfo = await getInstalledInfo(
-      apps[file.appId]!.app.id,
-    );
+    // The app may have been removed since it was downloaded; its id is the key
+    // it was stored under.
+    final PackageInfo? appInfo = await getInstalledInfo(file.appId);
     AppLogger.info(
       'Installing "${newInfo.packageName}" version "${newInfo.versionName}" versionCode "${newInfo.versionCode}"${appInfo != null ? ' (from existing version "${appInfo.versionName}" versionCode "${appInfo.versionCode}")' : ''}',
     );
@@ -854,11 +921,7 @@ extension AppsProviderInstall on AppsProvider {
         newVersionCode < oldVersionCode &&
         !(await canDowngradeApps())) {
       if (settingsProvider.showAppDowngradeError) {
-        try {
-          file.file.deleteSync();
-        } catch (e) {
-          AppLogger.error(e, message: 'Failed to delete downgraded APK file');
-        }
+        _discardDownload(downloadFiles, file.appId);
         throw DowngradeError(oldVersionCode, newVersionCode);
       }
     }
@@ -880,7 +943,7 @@ extension AppsProviderInstall on AppsProvider {
     }
     final allAPKs = [file.file.path];
     allAPKs.addAll(additionalAPKs.map((a) => a.file.path));
-    final installer = getInstaller();
+    final installer = getInstaller(apps[file.appId]?.app);
     final InstallResult result =
         shouldPollForInstallConfirmation(
           installer.modeKey,
@@ -899,12 +962,12 @@ extension AppsProviderInstall on AppsProvider {
           );
     bool installed = false;
     if (result.isError) {
-      try {
-        deleteFile(file.file);
-      } catch (e) {
-        AppLogger.info(
-          'Failed to delete APK after failed install: ${e.toString()}',
-        );
+      // Most failures say nothing against the file (a signature conflict with
+      // the installed app, no space left), and the retry that follows fixing
+      // them should not have to download it again (#69). Only a file the
+      // system rejected as such is removed, since reusing it can never work.
+      if (result.fileIsInvalid) {
+        _discardDownload(downloadFiles, file.appId);
       }
       throw InstallError(result.errorCode!);
     } else if (result.isSuccess) {
@@ -920,11 +983,11 @@ extension AppsProviderInstall on AppsProvider {
           installedVersionCode: newInfo.versionCode,
         );
       }
-      unawaited(file.file.delete(recursive: true));
+      _discardDownload(downloadFiles, file.appId);
       if (!isBg) settingsProvider.heavyImpact();
     }
-    // Cancelled or already-installed/pending: keep the file so a retry can
-    // reuse it without re-downloading (matches main).
+    // Cancelled or already-installed/pending: keep the download so a retry
+    // can reuse it without re-downloading (matches main).
     final saved = apps[file.appId];
     if (saved != null) await saveApps([saved.app]);
     return installed;
@@ -1276,7 +1339,7 @@ extension AppsProviderInstall on AppsProvider {
       return;
     }
     try {
-      await getInstaller().ensurePermission();
+      await getInstaller(apps[res.id]?.app).ensurePermission();
       final BuildContext? installContext = context?.mounted == true
           ? context
           : null;
@@ -1525,7 +1588,7 @@ extension AppsProviderInstall on AppsProvider {
   /// the install session start from the base.
   List<T> _moveSplitBaseFirst<T extends FileSystemEntity>(List<T> apks) {
     final int baseIndex = apks.indexWhere(
-      (e) => e.uri.pathSegments.last.toLowerCase() == 'base.apk',
+      (e) => e.uri.pathSegments.last.toLowerCase() == _splitBaseName,
     );
     if (baseIndex > 0) {
       apks.insert(0, apks.removeAt(baseIndex));
@@ -1542,9 +1605,10 @@ extension AppsProviderInstall on AppsProvider {
   /// option) and is treated as blocked when there is no context (background).
   Future<void> _verifyDownloadedApkSignatures(
     AppInMemory appEntry,
-    Set<String> apkHashes,
+    ApkSigningCertInfo signingInfo,
     BuildContext? context,
   ) async {
+    final apkHashes = signingInfo.hashes;
     final userHashes = parseAllowedSigningCertHashes(
       appEntry.app.settings.getStringOrNull('allowedSigningCertHashes'),
     );
@@ -1596,7 +1660,11 @@ extension AppsProviderInstall on AppsProvider {
 
     if (!settingsProvider.verifySigningCertHashes ||
         installedHashes.isEmpty ||
-        apkHashes.every(installedHashes.contains)) {
+        signingCertsMatch(
+          installedHashes: installedHashes,
+          apkHashes: apkHashes,
+          apkHasPastSigningCertificates: signingInfo.hasPastSigningCertificates,
+        )) {
       return;
     }
 
@@ -1681,9 +1749,9 @@ extension AppsProviderInstall on AppsProvider {
     if (downloadedFile == null && downloadedDir == null) return;
     // Verify the signing certificate(s) before any install attempt so a
     // mismatched or unverifiable APK never reaches the installer (#2922).
-    final apkHashes = downloadedFile != null
-        ? await apkSigningCertHashes(downloadedFile.file.path)
-        : await apkFilesSigningCertHashes(
+    final apkSigningInfo = downloadedFile != null
+        ? await apkSigningCertInfo(downloadedFile.file.path)
+        : await apkFilesSigningCertInfo(
             downloadedDir!.extracted
                 .listSync(recursive: true, followLinks: false)
                 .whereType<File>()
@@ -1696,21 +1764,29 @@ extension AppsProviderInstall on AppsProvider {
           : null;
       await _verifyDownloadedApkSignatures(
         appEntry,
-        apkHashes,
+        apkSigningInfo,
         // ignore: use_build_context_synchronously
         verificationContext,
       );
-    } on SigningCertMismatchError {
-      // A blocked APK is useless; remove it so it isn't retried or reused.
+    } on SigningCertMismatchError catch (e) {
+      // An APK that fails the hashes the user configured is useless; remove it
+      // so it isn't retried or reused. One that only differs from the installed
+      // app is kept: the user may yet decide to install it, and a background
+      // check would otherwise download it again every time it runs (#69).
       try {
-        if (downloadedFile != null) {
-          downloadedFile.file.deleteSync();
-        } else {
-          downloadedDir!.extracted.deleteSync(recursive: true);
-          downloadedDir.file.deleteSync();
+        if (downloadedDir != null && downloadedDir.extracted.existsSync()) {
+          downloadedDir.extracted.deleteSync(recursive: true);
         }
-      } catch (e) {
-        AppLogger.warn('Failed to delete blocked APK for $id: ${e.toString()}');
+      } catch (deleteError) {
+        AppLogger.warn(
+          'Failed to delete unpacked APKs for $id: ${deleteError.toString()}',
+        );
+      }
+      if (e.hardBlock) {
+        _discardDownload(
+          downloadedDir?.cachedFiles ?? [downloadedFile!.file],
+          id,
+        );
       }
       rethrow;
     }
@@ -1723,7 +1799,7 @@ extension AppsProviderInstall on AppsProvider {
       final contextIfNewInstall = appEntry.installedInfo == null
           ? context
           : null;
-      final String installerModeKey = getInstaller().modeKey;
+      final String installerModeKey = getInstaller(appEntry.app).modeKey;
       // Only the stock session-based installer needs the background-completion
       // workaround (its install await never returns in the background).
       final bool needBGWorkaround =
@@ -1850,7 +1926,7 @@ extension AppsProviderInstall on AppsProvider {
       notify();
       if (!isBg) settingsProvider.lightImpact();
       willBeSilent = await canInstallSilently(apps[id]!.app);
-      final installer = getInstaller();
+      final installer = getInstaller(apps[id]!.app);
       // Only the stock installer surfaces a system install prompt that pulls the
       // user away; wait for them to return before proceeding.
       if (!willBeSilent &&

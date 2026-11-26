@@ -12,6 +12,7 @@ import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/document_tree_bridge.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
+import 'package:obtainium/utils/app_id_utils.dart';
 import 'package:shared_storage/shared_storage.dart' as saf;
 
 /// Import/export of app configurations for [AppsProvider].
@@ -214,9 +215,19 @@ extension AppsProviderImportExport on AppsProvider {
     } catch (e) {
       throw ObtainiumError('${tr('failedToImport')}: ${e.toString()}');
     }
+    for (final app in importedApps) {
+      if (!isValidAppId(app.id)) {
+        AppLogger.warn('Rejected import with unsafe app ID: ${app.id}');
+        throw ObtainiumError(tr('invalidInput'));
+      }
+    }
     await waitForAppsToLoad();
     // Saving records each app's installed version from the OS; a track-only
-    // app keeps the release it was marked with.
+    // app keeps the release it was marked with. An import never carries
+    // allowIdChange, which would bypass the package ID mismatch check.
+    for (var i = 0; i < importedApps.length; i++) {
+      importedApps[i] = importedApps[i].copyWith(allowIdChange: false);
+    }
     await saveApps(importedApps, onlyIfExists: false);
     bool hasSettings = false;
     if (hasSchemaVersion && schema != null) {

@@ -25,9 +25,12 @@ String installerPackageNameForApp(App app, {required bool googlePlayDefault}) {
       : '';
 }
 
-/// Android PackageInstaller status codes: 0 = success, 3 = cancelled / pending.
+/// Android PackageInstaller status codes: 0 = success, 3 = cancelled / pending,
+/// 4 = the system rejected the APK itself (unparseable, bad signature, a
+/// downgrade).
 const int _installSuccessCode = 0;
 const int _installAlreadyPendingCode = 3;
+const int _installInvalidCode = 4;
 
 enum InstallOutcome { success, cancelled, error }
 
@@ -37,7 +40,17 @@ class InstallResult {
   final InstallOutcome outcome;
   final int? errorCode;
 
-  const InstallResult({required this.outcome, this.errorCode});
+  /// Whether a failure says the downloaded file itself is unusable, so
+  /// installing it again can only fail the same way. Every other failure (a
+  /// signature conflict with the installed app, no space left, an incompatible
+  /// device) leaves a good file behind that is worth keeping for a retry (#69).
+  final bool fileIsInvalid;
+
+  const InstallResult({
+    required this.outcome,
+    this.errorCode,
+    this.fileIsInvalid = false,
+  });
 
   factory InstallResult.success() =>
       const InstallResult(outcome: InstallOutcome.success);
@@ -45,8 +58,14 @@ class InstallResult {
   factory InstallResult.cancelled() =>
       const InstallResult(outcome: InstallOutcome.cancelled);
 
-  factory InstallResult.error(int code) =>
-      InstallResult(outcome: InstallOutcome.error, errorCode: code);
+  /// A failure carrying a platform status [code]. [fileIsInvalid] defaults to
+  /// what the PackageInstaller status says; an installer whose code is not one
+  /// of those statuses states it explicitly.
+  factory InstallResult.error(int code, {bool? fileIsInvalid}) => InstallResult(
+    outcome: InstallOutcome.error,
+    errorCode: code,
+    fileIsInvalid: fileIsInvalid ?? code == _installInvalidCode,
+  );
 
   /// Maps a raw platform install status code to an [InstallResult].
   /// [_installSuccessCode] is a completed install, [_installAlreadyPendingCode]

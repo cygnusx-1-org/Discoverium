@@ -16,23 +16,24 @@ import 'package:url_launcher/url_launcher_string.dart';
 /// from being forgotten at one of them, and gives the goldens in
 /// `test/goldens/app_markdown_golden_test.dart` a single surface to pin.
 class AppMarkdown extends StatelessWidget {
-  const AppMarkdown({super.key, required this.data, this.relativeLinkBase});
+  const AppMarkdown({
+    super.key,
+    required this.data,
+    this.resolveLink,
+    this.softLineBreak = false,
+  });
 
   /// The markdown to render.
   final String data;
 
-  /// The URL a relative link is resolved against, normally the app's own page.
-  /// When null, a relative link is opened exactly as written.
-  final String? relativeLinkBase;
+  /// Turns a tapped link into the URL to open, so a relative link can be
+  /// resolved against the page the markdown came from. When null, a link is
+  /// opened exactly as written.
+  final String Function(String href)? resolveLink;
 
-  /// Resolves [href] the way the call site that supplied [relativeLinkBase]
-  /// expects: absolute links are always left alone.
-  String _resolveLink(String href) {
-    final base = relativeLinkBase;
-    if (base == null) return href;
-    if (href.startsWith('http://') || href.startsWith('https://')) return href;
-    return '${Uri.parse(base).origin}/$href';
-  }
+  /// Whether a single newline inside a paragraph breaks the line, the way
+  /// GitHub renders release notes, rather than joining the two lines.
+  final bool softLineBreak;
 
   @override
   Widget build(BuildContext context) {
@@ -43,6 +44,7 @@ class AppMarkdown extends StatelessWidget {
     return LegacyMaterialBridge(
       child: MarkdownBody(
         data: data,
+        softLineBreak: softLineBreak,
         styleSheet: MarkdownStyleSheet(
           blockquoteDecoration: BoxDecoration(color: blockquoteColor),
         ),
@@ -50,7 +52,7 @@ class AppMarkdown extends StatelessWidget {
           if (href == null) return;
           unawaited(
             launchUrlString(
-              _resolveLink(href),
+              resolveLink?.call(href) ?? href,
               mode: LaunchMode.externalApplication,
             ),
           );

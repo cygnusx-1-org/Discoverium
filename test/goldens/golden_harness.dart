@@ -1,6 +1,9 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+// Deprecated since Flutter 3.47, but the harness has to read the legacy theme
+// that flutter_markdown_plus still renders against.
+// ignore: deprecated_member_use
 import 'package:flutter/material.dart' as legacy;
 import 'package:flutter/services.dart' show FontLoader;
 import 'package:flutter_test/flutter_test.dart';

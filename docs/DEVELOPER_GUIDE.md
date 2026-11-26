@@ -230,6 +230,32 @@ the same URL can appear under multiple profiles without losing its settings.
   every build (including F-Droid). Do not remove it.
 - Cronet cannot disable TLS verification, so requests with `allowInsecure` use
   `dart:io` via `IOClient`. This is the only intentional exception.
+- Cronet needs Dart FFI callback trampolines, which require executable anonymous
+  memory. `lib/services/dcl_support.dart` checks the process's GrapheneOS flags
+  (`/proc/self/attr/grapheneos_flags`, older builds:
+  `/proc/self/attr/selinux_flags`) and tests bit 0 (`DENY_EXECMEM`), matching
+  `SELinuxFlags.isExecmemBlocked()`. Reading the attribute does not attempt DCL,
+  so it avoids the OS notification. If neither attribute exists, it falls back to
+  an `mmap(PROT_EXEC)` probe (the approach used by media-kit/Aves); that probe can
+  trigger the notification on a restricting build without the attribute. The
+  fallback can be removed once dart-lang/sdk#64137 is fixed.
+- This is memory DCL, not storage DCL. Every native library (`libcronet`,
+  `libdartjni`, `libapp`, `libflutter`) is packaged uncompressed under
+  `lib/<abi>/` with `extractNativeLibs=false`, so Android maps it from the APK;
+  nothing is extracted to app data. Do not add extraction to app data as a
+  workaround.
+- When DCL is blocked, `HttpService` uses `dart:io` instead of Cronet for the
+  default client (pinned and `allowInsecure` requests already use `dart:io`);
+  user-installed/disabled CAs and system proxy settings are then unavailable.
+  `SettingsProvider.initializeSettings()` applies the `useAndroidCertStore`
+  preference (default on) and `HttpService` also checks the DCL state itself, so
+  background isolates are safe. A one-time home-page dialog explains the fallback;
+  Settings → Updates → Android certificate store shows the current state and lets
+  users opt out of Cronet even when DCL is allowed.
+- The per-app DCL settings activity is guarded by `WRITE_SECURE_SETTINGS`, so the
+  app can only open the app info page (`openAppSettings`), not the DCL screen.
+- `grapheneos_flags` was renamed from `selinux_flags` in 2026. Support both; if
+  GrapheneOS renames it again, the `mmap` probe is the fallback.
 - Certificate pinning is opt-in. Settings → Updates → Certificate pinning opens a
   dedicated management page. Built-in pin sets come from `builtInPinnedHosts` in
   `lib/services/pinned_certificates.dart` and are kept virtual: the JSON store in
@@ -452,6 +478,7 @@ URI host as the **action** and dispatches accordingly:
 | --- | --- | --- |
 | `add` | `uri.queryParameters['url']` or `uri.path.substring(1)` | Standardizes the URL, checks for duplicates, navigates to Add App page |
 | `app` / `apps` | URI-decoded query or path | Shows a confirmation dialog with the raw JSON, then imports via `AppsProvider` |
+| `open` | `uri.queryParameters['id']` (package name) | Waits for apps to load, then opens that app's page, or shows "App not found" |
 
 Inbound links arrive via `AppLinks` (Android App Links / intent filters) — the
 `obtainium://` scheme is registered in `AndroidManifest.xml`. Both `getInitialLink()`
@@ -467,6 +494,11 @@ alongside this dispatcher.
 The **share sheet** (`ACTION_SEND` intent) added in the `MainActivity.kt` native layer
 rewrites shared URLs as `obtainium://add/<url>` before they reach `interpretLink`, so
 the same Dart-side dispatch handles both manual deeplinks and share-target intents.
+
+Likewise, **Settings > App info > App details** sends `ACTION_SHOW_APP_INFO` (with
+`EXTRA_PACKAGE_NAME`) to the app's installer. `MainActivity.kt` rewrites it as
+`obtainium://open?id=<package>`, so apps installed by Obtainium get a working
+App details button that opens their page.
 
 ### Reusable components (`lib/components/`)
 
@@ -658,7 +690,7 @@ Four concrete implementations:
 | `StockInstaller` | `android_package_installer` plugin (PackageInstaller session API) | Standard installs; supports silent install via ADB-granted `INSTALL_PACKAGES` |
 | `ShizukuInstaller` | `shizuku_apk_installer` plugin | Self-update of Obtainium itself, or when Shizuku/Dhizuku/Sui is available |
 | `ExternalInstaller` | Native `MethodChannel` bridge (`external_install_bridge.dart` + `MainActivity.kt`) | Hands off to a third-party installer app chosen by the user; lists eligible targets via `listInstallTargets()` and converts file paths to `content://` URIs via `FileProvider` |
-| `RootInstaller` | `su` + `pm install` CLI | Elevated installs for the current foreground user, not just user 0 (needed under multi-user) |
+| `RootInstaller` | `su` + `pm install` CLI | Elevated installs into the user or profile Obtainium itself runs in (derived from its own uid, so work profiles get `--user 10` rather than the foreground user 0), not just user 0 (needed under multi-user) |
 
 Samsung Galaxy Store apps expose an opt-in installation-source switch next to
 the existing per-app Google Play switch. These switches are mutually exclusive.

@@ -74,6 +74,11 @@ void main() {
       reason: 'category continue enabled',
     );
     await tester.tap(continueButton);
+    await pumpUntilTrue(
+      tester,
+      () => find.text('New category').evaluate().isEmpty,
+      reason: 'category editor closed',
+    );
     await pumpUntil(tester, find.widgetWithText(ActionChip, 'E2E Category'));
 
     // Category editor exposes the update-check exclusion switch (#3375).
@@ -92,6 +97,11 @@ void main() {
     await tester.tap(skipSwitch);
     await pumpFor(tester, const Duration(milliseconds: 300));
     await tester.tap(find.widgetWithText(FilledButton, 'Continue').last);
+    await pumpUntilTrue(
+      tester,
+      () => find.text('Edit category').evaluate().isEmpty,
+      reason: 'category editor closed',
+    );
     await pumpUntil(tester, find.widgetWithText(ActionChip, 'E2E Category'));
     expect(
       readProvider<SettingsProvider>().categoriesExcludedFromChecks,
@@ -124,6 +134,11 @@ void main() {
     await tester.tap(skipSwitch2);
     await pumpFor(tester, const Duration(milliseconds: 300));
     await tester.tap(find.widgetWithText(FilledButton, 'Continue').last);
+    await pumpUntilTrue(
+      tester,
+      () => find.text('Edit category').evaluate().isEmpty,
+      reason: 'category editor closed',
+    );
     await pumpUntil(tester, find.widgetWithText(ActionChip, 'E2E Category'));
     expect(
       readProvider<SettingsProvider>().categoriesExcludedFromChecks,
