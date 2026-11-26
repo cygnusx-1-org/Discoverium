@@ -828,6 +828,18 @@
   verified: true
   releases:
     url: https://github.com/ProtonVPN/android-app/releases
+- name: Q Launcher
+  authors: Nathan Grennan 
+  category: tools
+  commercial: false
+  description: Q Launcher is a Projectivy work alike, and a free and open-source Android TV launcher.
+  icon: https://raw.githubusercontent.com/cygnusx-1-org/qlauncher/refs/heads/master/assets/icons/ic_launcher.png
+  id: org.cygnusx1.qlauncher
+  tv: only
+  type: curated
+  verified: true
+  releases:
+    url: https://github.com/cygnusx-1-org/qlauncher/releases 
 - name: RedReader
   authors: QuantumBadger
   category: social
